@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+      "target": "ESNext",
+      "module": "ESNext",
+      "moduleResolution": "Node",
+      "baseUrl": ".",
+      "paths": {
+        "@/*": ["src/*"]
+      },
+      "jsx": "preserve",
+      "allowSyntheticDefaultImports": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true
+    },
+    "include": [
+      "src/**/*.js",
+      "src/**/*.vue",
+      "src/**/*.json"
+    ],
+    "exclude": [
+      "node_modules",
+      "dist"
+    ]
+}

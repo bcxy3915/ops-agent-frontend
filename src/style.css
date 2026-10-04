@@ -1,0 +1,67 @@
+/* ========== 全局样式 ========== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-hover: rgba(30, 64, 175, 0.05);
+  --bg-selected: rgba(30, 64, 175, 0.08);
+  --text-primary: #1E293B;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --border: #E5E9F0;
+  --border-light: #EEF1F6;
+  --primary: #1E40AF;
+  --primary-light: #DBEAFE;
+  --primary-hover: #1E3A8A;
+  --success: #059669;
+  --success-bg: #ECFDF5;
+  --warning: #D97706;
+  --warning-bg: #FFFBEB;
+  --danger: #DC2626;
+  --danger-bg: #FEF2F2;
+  --card-bg: linear-gradient(180deg, #FFFFFF 0%, #FDFEFF 100%);
+  --card-shadow: 0 1px 2px rgba(30, 64, 175, 0.03), 0 4px 16px rgba(30, 64, 175, 0.05);
+  --card-shadow-hover: 0 2px 4px rgba(30, 64, 175, 0.05), 0 8px 24px rgba(30, 64, 175, 0.08);
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+html, body, #app { height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 55% at 15% 0%, rgba(219, 234, 254, 0.7) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 55% at 85% 100%, rgba(237, 233, 254, 0.6) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(255, 255, 255, 0.8) 0%, transparent 70%),
+    linear-gradient(180deg, #F8FAFD 0%, #EFF3FA 100%);
+  background-attachment: fixed;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
+
+/* 主布局 */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
