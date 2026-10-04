@@ -65,3 +65,41 @@ body {
   min-width: 0;
   overflow: hidden;
 }
+
+/* ========== 侧边栏用户下拉菜单 ========== */
+.sidebar-user-dropdown {
+  width: 240px !important;
+  min-width: 240px !important;
+  padding: 4px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(30, 64, 175, 0.12) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.sidebar-user-dropdown .el-dropdown-menu {
+  padding: 0 !important;
+  border: none !important;
+}
+
+.sidebar-user-dropdown .el-dropdown-menu__item {
+  font-size: 13.5px !important;
+  padding: 9px 14px !important;
+  border-radius: 6px !important;
+  color: var(--text-secondary);
+  gap: 10px;
+}
+
+.sidebar-user-dropdown .el-dropdown-menu__item:not(.is-disabled):hover {
+  background: rgba(30, 64, 175, 0.06) !important;
+  color: var(--primary) !important;
+}
+
+.sidebar-user-dropdown .el-dropdown-menu__item--divided {
+  margin-top: 4px;
+  border-top: 1px solid var(--border) !important;
+  padding-top: 10px !important;
+}
+
+.sidebar-user-dropdown .el-dropdown-menu__item--divided::before {
+  display: none;
+}
