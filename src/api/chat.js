@@ -8,23 +8,32 @@
  * 由于 Spring Security 需要 Authorization Header，
  * 这里用 fetch + ReadableStream 手写 SSE 解析。
  */
-
+import request from "./request";
 import { useAuthStore } from "@/stores/auth";
 
 /**
- * 流式问答
+ * 统一的 401 处理：清空凭证 + 跳登录页
  *
- * @param {string} question  用户问题
- * @param {object} callbacks
- *   - onChunk(chunk)  收到文本片段
- *   - onDone()        完成
- *   - onError(err)    出错
- * @returns {{ close: Function }}
+ * 因为 askStream 用原生 fetch，不走 axios 拦截器，
+ * 所以 401 需要手动处理（复用 request.js 里的逻辑）
  */
-export function askStream(question, { onChunk, onDone, onError }) {
+function handle401() {
+  localStorage.removeItem("ops_token");
+  localStorage.removeItem("ops_username");
+  localStorage.removeItem("ops_role");
+
+  // 动态 import router 避免循环依赖
+  import("@/router").then(({ default: router }) => {
+    const current = router.currentRoute.value.fullPath;
+    router.push(`/login?redirect=${encodeURIComponent(current)}`);
+  });
+}
+
+/**
+ * 流式问答
+ */
+export function askStream(sessionId, question, { onChunk, onDone, onError }) {
   const authStore = useAuthStore();
-  const sessionId =
-    "sess-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
 
   const url = `/api/ops/ask/stream?question=${encodeURIComponent(
     question
@@ -42,18 +51,17 @@ export function askStream(question, { onChunk, onDone, onError }) {
     signal: controller.signal,
   })
     .then(async (response) => {
+      // ★ 非 2xx 响应
       if (!response.ok) {
-        // 401 / 403 / 429 等
         if (response.status === 401) {
-          throw new Error("未登录或登录已过期");
+          handle401();
+          throw new Error("登录已过期，请重新登录");
         }
-        if (response.status === 403) {
-          throw new Error("权限不足");
-        }
-        if (response.status === 429) {
+        if (response.status === 403) throw new Error("权限不足");
+        if (response.status === 429)
           throw new Error("请求过于频繁，请稍后重试");
-        }
-        throw new Error(`请求失败: ${response.status}`);
+        if (response.status === 500) throw new Error("服务器内部错误");
+        throw new Error(`请求失败 (${response.status})`);
       }
 
       const reader = response.body.getReader();
@@ -68,17 +76,14 @@ export function askStream(question, { onChunk, onDone, onError }) {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE 格式：每个事件以 "\n\n" 分隔
-        // 每个事件里可能有多行 "data: xxx"
         const events = buffer.split("\n\n");
-        // 最后一段可能不完整，保留在 buffer
         buffer = events.pop() || "";
 
         for (const event of events) {
           const lines = event.split("\n");
           for (const line of lines) {
             if (line.startsWith("data:")) {
-              const data = line.slice(5).trim(); // 去掉 "data:" 前缀
+              const data = line.slice(5).trim();
 
               if (data === "[DONE]") {
                 stopped = true;
@@ -94,13 +99,12 @@ export function askStream(question, { onChunk, onDone, onError }) {
         }
       }
 
-      // 流结束（没收到 [DONE]）
       if (!stopped) {
         onDone && onDone();
       }
     })
     .catch((err) => {
-      if (stopped) return; // 主动取消不算错误
+      if (stopped) return;
       if (err.name === "AbortError") return;
       onError && onError(err);
     });
@@ -111,4 +115,24 @@ export function askStream(question, { onChunk, onDone, onError }) {
       controller.abort();
     },
   };
+}
+
+// ============================================================
+// 会话历史 API
+// ============================================================
+
+export async function listConversations() {
+  return request.get("/chat/sessions");
+}
+
+export async function listMessages(sessionId) {
+  return request.get(`/chat/sessions/${sessionId}/messages`);
+}
+
+export async function deleteConversation(sessionId) {
+  return request.delete(`/chat/sessions/${sessionId}`);
+}
+
+export async function renameConversation(sessionId, title) {
+  return request.patch(`/chat/sessions/${sessionId}/title`, { title });
 }

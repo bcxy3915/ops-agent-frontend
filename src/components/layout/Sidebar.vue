@@ -1,6 +1,6 @@
 <template>
   <aside class="sidebar">
-    <!-- ============ 顶部：Logo + 新建对话 ============ -->
+    <!-- ========== 顶部 Logo + 新建对话 ========== -->
     <div class="sidebar-header">
       <div class="logo">
         <div class="logo-icon">
@@ -23,7 +23,7 @@
       </button>
     </div>
 
-    <!-- ============ 导航 ============ -->
+    <!-- ========== 导航 ========== -->
     <nav class="nav">
       <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="nav-item"
         :class="{ active: isActive(item.path) }">
@@ -34,20 +34,70 @@
       </router-link>
     </nav>
 
-    <!-- ============ 会话历史 ============ -->
+    <!-- ========== 会话历史 ========== -->
     <div class="history">
-      <div v-for="group in historyGroups" :key="group.label" class="history-group">
-        <div class="history-label">{{ group.label }}</div>
-        <div v-for="item in group.items" :key="item.id" class="history-item"
-          :class="{ active: currentSessionId === item.id }" @click="selectSession(item.id)">
-          {{ item.title }}
-        </div>
+      <div v-if="!authStore.isLoggedIn" class="history-empty">
+        <el-icon>
+          <Lock />
+        </el-icon>
+        <span>登录后查看历史会话</span>
       </div>
+
+      <div v-else-if="groupedConversations.length === 0" class="history-empty">
+        <el-icon>
+          <ChatLineSquare />
+        </el-icon>
+        <span>暂无历史会话</span>
+      </div>
+
+      <template v-else>
+        <!-- "查看全部"入口 -->
+        <div class="history-view-all" @click="goToHistory">
+          <el-icon>
+            <Expand />
+          </el-icon>
+          <span>查看全部对话</span>
+        </div>
+
+        <div v-for="group in groupedConversations" :key="group.label" class="history-group">
+          <div class="history-label">{{ group.label }}</div>
+
+          <!-- ★ 每一项：标题 + 三个点下拉菜单 -->
+          <div v-for="item in group.items" :key="item.sessionId" class="history-item"
+            :class="{ active: chatStore.sessionId === item.sessionId }" @click="selectSession(item.sessionId)">
+            <span class="history-title">{{ item.title || '新对话' }}</span>
+
+            <!-- ★ 三个点下拉菜单 -->
+            <el-dropdown trigger="click" placement="bottom-end" @command="(cmd) => handleItemCommand(cmd, item)"
+              @click.stop>
+              <div class="item-more" @click.stop>
+                <el-icon>
+                  <MoreFilled />
+                </el-icon>
+              </div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="rename">
+                    <el-icon>
+                      <Edit />
+                    </el-icon>
+                    重命名
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>
+                    <el-icon>
+                      <Delete />
+                    </el-icon>
+                    删除
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <!-- ============ 底部：登录状态 ============ -->
-
-    <!-- 已登录：下拉菜单 -->
+    <!-- ========== 底部用户区 ========== -->
     <div v-if="authStore.isLoggedIn" class="user-area-wrapper">
       <el-dropdown popper-class="sidebar-user-dropdown" trigger="click" placement="top-start" @command="handleCommand">
         <div class="user-area">
@@ -77,7 +127,6 @@
       </el-dropdown>
     </div>
 
-    <!-- 未登录：显示登录提示 -->
     <div v-else class="user-area login-area" @click="goToLogin">
       <div class="avatar guest">
         <el-icon>
@@ -96,123 +145,138 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  MoreFilled, UserFilled, ArrowRight,
-  User, SwitchButton
+  MoreFilled, UserFilled, ArrowRight, User, SwitchButton,
+  Lock, ChatLineSquare, Expand, Edit, Delete
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
+import { groupConversations } from '@/utils/conversation'
+import { renameConversation as renameConversationApi } from '@/api/chat'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const chatStore = useChatStore()
 
 // ============ 导航配置 ============
-// roles: 允许访问的角色列表，不写表示所有登录用户可见
 const ALL_NAV_ITEMS = [
-  {
-    path: '/chat',
-    label: '对话',
-    icon: 'ChatDotRound'
-    // 无 roles 字段 → 所有人可见（包括未登录）
-  },
-  {
-    path: '/services',
-    label: '服务管理',
-    icon: 'Monitor',
-    roles: ['ADMIN', 'OPERATOR', 'VIEWER']
-  },
-  {
-    path: '/metrics',
-    label: '指标监控',
-    icon: 'TrendCharts',
-    roles: ['ADMIN', 'OPERATOR', 'VIEWER']
-  },
-  {
-    path: '/audit',
-    label: '审计日志',
-    icon: 'Document',
-    roles: ['ADMIN']    // ★ 仅管理员
-  },
-  {
-    path: '/users',
-    label: '用户管理',
-    icon: 'User',
-    roles: ['ADMIN']    // ★ 仅管理员
-  }
+  { path: '/chat', label: '对话', icon: 'ChatDotRound' },
+  { path: '/services', label: '服务管理', icon: 'Monitor', roles: ['ADMIN', 'OPERATOR', 'VIEWER'] },
+  { path: '/metrics', label: '指标监控', icon: 'TrendCharts', roles: ['ADMIN', 'OPERATOR', 'VIEWER'] },
+  { path: '/audit', label: '审计日志', icon: 'Document', roles: ['ADMIN'] },
+  { path: '/users', label: '用户管理', icon: 'User', roles: ['ADMIN'] }
 ]
 
-/**
- * 根据当前用户角色过滤出可见菜单
- */
 const navItems = computed(() => {
   const role = authStore.role
-
   return ALL_NAV_ITEMS.filter((item) => {
-    // 无 roles 字段 → 所有人可见
     if (!item.roles) return true
-
-    // 未登录 → 不显示有 roles 限制的菜单
     if (!authStore.isLoggedIn) return false
-
-    // 检查角色是否在允许列表
     return item.roles.includes(role)
   })
 })
 
-// 当前路由高亮判断
+function goToHistory() {
+  router.push('/chat/history')
+}
+
 function isActive(path) {
   return route.path === path || route.path.startsWith(path + '/')
 }
 
-// ============ 会话历史（暂时写死）============
-const historyGroups = ref([
-  {
-    label: '今天',
-    items: [
-      { id: 's1', title: 'todo-service 健康吗' },
-      { id: 's2', title: 'CPU 使用率过高怎么排查' },
-      { id: 's3', title: '内存泄漏排查思路' }
-    ]
-  },
-  {
-    label: '昨天',
-    items: [
-      { id: 's4', title: 'api-test-service 连不上' },
-      { id: 's5', title: '服务注册流程' }
-    ]
-  },
-  {
-    label: '7 天内',
-    items: [
-      { id: 's6', title: '如何配置限流规则' },
-      { id: 's7', title: '数据库连接池耗尽' }
-    ]
-  }
-])
-
-const currentSessionId = ref('s1')
-
-function selectSession(id) {
-  currentSessionId.value = id
-}
-
-// ============ 角色标签 ============
-const roleLabel = computed(() => {
-  const labels = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
-  return labels[authStore.role] || ''
+// ============ 会话列表分组 ============
+const groupedConversations = computed(() => {
+  return groupConversations(chatStore.conversations)
 })
 
-// ============ 事件处理 ============
+async function loadConversations() {
+  if (!authStore.isLoggedIn) {
+    chatStore.conversations = []
+    return
+  }
+  await chatStore.refreshConversations()
+}
 
+onMounted(() => {
+  loadConversations()
+})
+
+watch(
+  () => authStore.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      loadConversations()
+    } else {
+      chatStore.conversations = []
+    }
+  }
+)
+
+// ============ 事件处理 ============
 function handleNewChat() {
+  chatStore.newConversation()
   router.push('/chat')
 }
 
 function goToLogin() {
   router.push('/login')
+}
+
+async function selectSession(sessionId) {
+  await chatStore.loadConversation(sessionId)
+  if (route.path !== '/chat') {
+    router.push('/chat')
+  }
+}
+
+// ★ 处理会话项的下拉菜单命令
+async function handleItemCommand(command, item) {
+  if (command === 'rename') {
+    await renameItem(item)
+  } else if (command === 'delete') {
+    await deleteItem(item)
+  }
+}
+
+// ★ 重命名会话
+async function renameItem(item) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的会话标题', '重命名会话', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: item.title || '',
+      inputValidator: (val) => (!val || !val.trim()) ? '标题不能为空' : true
+    })
+    if (value && value.trim()) {
+      const newTitle = value.trim()
+      // 调用后端接口
+      await renameConversationApi(item.sessionId, newTitle)
+      // 更新本地状态（触发响应式）
+      item.title = newTitle
+      ElMessage.success('重命名成功')
+    }
+  } catch (e) {
+    // 用户取消
+  }
+}
+
+// ★ 删除单个会话
+async function deleteItem(item) {
+  try {
+    await ElMessageBox.confirm(`确定要删除会话"${item.title || '未命名'}"吗？`, '提示', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+    await chatStore.removeConversation(item.sessionId)
+    ElMessage.success('已删除')
+  } catch (e) {
+    // 用户取消
+  }
 }
 
 async function handleCommand(command) {
@@ -224,15 +288,23 @@ async function handleCommand(command) {
         cancelButtonText: '取消'
       })
       authStore.logout()
+      chatStore.conversations = []
+      chatStore.newConversation()
       ElMessage.success('已退出登录')
       router.push('/chat')
     } catch {
-      // 用户取消，什么也不做
+      // 用户取消
     }
   } else if (command === 'profile') {
     ElMessage.info('个人信息页面待实现')
   }
 }
+
+// ============ 角色标签 ============
+const roleLabel = computed(() => {
+  const labels = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
+  return labels[authStore.role] || ''
+})
 </script>
 
 <style scoped>
@@ -342,6 +414,41 @@ async function handleCommand(command) {
   padding: 8px;
 }
 
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 16px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.history-empty .el-icon {
+  font-size: 24px;
+  color: #CBD5E1;
+}
+
+.history-view-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.history-view-all:hover {
+  background: rgba(30, 64, 175, 0.06);
+  color: var(--primary);
+}
+
 .history-group {
   margin-bottom: 14px;
 }
@@ -355,15 +462,16 @@ async function handleCommand(command) {
   font-weight: 600;
 }
 
+/* ★ 修改：history-item 使用 flex 布局，标题占满剩余空间，右侧三个点 */
 .history-item {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 8px 12px;
   border-radius: 6px;
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: all 0.15s;
   margin-bottom: 1px;
 }
@@ -378,6 +486,39 @@ async function handleCommand(command) {
   color: var(--primary);
   font-weight: 500;
   box-shadow: 0 1px 4px rgba(30, 64, 175, 0.08);
+}
+
+.history-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ★ 新增：三个点按钮 */
+.item-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: #8F959E;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+/* 悬浮在会话项上时显示三个点 */
+.history-item:hover .item-more {
+  display: flex;
+}
+
+.item-more:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #1F2329;
 }
 
 /* ============ 底部用户区 ============ */
@@ -420,7 +561,6 @@ async function handleCommand(command) {
   box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
 }
 
-/* 未登录状态的头像 */
 .avatar.guest {
   background: #CBD5E1;
   color: #64748B;
@@ -450,7 +590,6 @@ async function handleCommand(command) {
   text-overflow: ellipsis;
 }
 
-/* 未登录区域的样式 */
 .login-area {
   cursor: pointer;
 }

@@ -18,7 +18,7 @@
         <el-icon>
           <Delete />
         </el-icon>
-        清空
+        新建
       </el-button>
     </header>
 
@@ -87,10 +87,8 @@ const chatInputRef = ref(null)          // ★ 输入框引用
 const loginDialogVisible = ref(false)    // ★ 登录弹窗
 const pendingQuestion = ref('')          // ★ 待发送的问题
 
-// 会话 ID（暂时随机生成）
-const sessionId = computed(() => {
-  return 'sess-' + Math.random().toString(36).slice(2, 10)
-})
+// ★ sessionId 从 store 拿（store 里已持久化到 localStorage）
+const sessionId = computed(() => chatStore.sessionId || '未创建')
 
 // 推荐问题
 const quickQuestions = [
@@ -144,7 +142,7 @@ function handleQuickAsk(question) {
 
 // 清空对话
 function clearChat() {
-  chatStore.clearMessages()
+  chatStore.newConversation()
 }
 
 // 自动滚动到底部

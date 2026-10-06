@@ -19,7 +19,7 @@
         <ToolCallCard v-for="(tool, idx) in message.tools" :key="idx" :tool="tool" />
 
         <!-- 答案块 -->
-        <div v-if="message.answer" class="answer" v-html="renderedAnswer" />
+        <div v-if="message.answer" class="answer" :class="{ 'answer-error': isError }" v-html="renderedAnswer" />
         <div v-else-if="message.streaming" class="answer streaming-placeholder">
             <span class="dot-loading">
                 <span></span><span></span><span></span>
@@ -38,6 +38,10 @@ const props = defineProps({
     message: { type: Object, required: true }
 })
 
+const isError = computed(() => {
+    return props.message.answer && props.message.answer.includes('⚠️')
+})
+
 // Markdown 渲染器
 const md = new MarkdownIt({
     html: false,
@@ -47,15 +51,28 @@ const md = new MarkdownIt({
 
 const renderedAnswer = computed(() => {
     if (!props.message.answer) return ''
-    return md.render(props.message.answer)
+    try {
+        // ★ 尝试渲染 Markdown
+        return md.render(props.message.answer)
+    } catch (e) {
+        // ★ 如果渲染不完整导致报错，降级为纯文本换行，防止白屏
+        console.error("Markdown render error:", e)
+        return props.message.answer.replace(/\n/g, '<br/>')
+    }
 })
 
 function formatTime(id) {
-    // 从 id 里提取时间戳（id 格式：u-1759...）
-    const ts = parseInt(id.split('-')[1])
-    if (!ts) return ''
-    const d = new Date(ts)
-    return d.toTimeString().slice(0, 8)
+    if (!id) return '';
+    // 兼容历史消息 id (m-xxxx) 和实时消息 id (u-xxxx)
+    const parts = id.split('-');
+    if (parts.length < 2) return '';
+
+    const ts = parseInt(parts[1]);
+    // ★ 关键：如果 ts 不是数字（NaN），直接返回空，防止 new Date(NaN) 导致渲染崩溃
+    if (isNaN(ts) || ts < 1000000000000) return '';
+
+    const d = new Date(ts);
+    return d.toTimeString().slice(0, 8);
 }
 </script>
 
@@ -228,6 +245,18 @@ function formatTime(id) {
     content: '▊';
     color: var(--primary);
     animation: blink 1s infinite;
+}
+
+/* ★ 错误样式 */
+.answer-error {
+    border-color: #FECACA;
+    background: linear-gradient(180deg, #FFF5F5 0%, #FFFFFF 100%);
+}
+
+.answer-error :deep(blockquote) {
+    border-left-color: #F87171;
+    background: rgba(254, 226, 226, 0.6);
+    color: #B91C1C;
 }
 
 @keyframes blink {

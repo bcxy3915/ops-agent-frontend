@@ -1,6 +1,19 @@
 import axios from "axios";
 import { ElMessage } from "element-plus";
 
+/**
+ * 懒加载 router，避免与 router/index.js 形成循环依赖
+ * （router → 组件 → request.js → router 会死循环）
+ */
+let routerRef = null;
+async function getRouter() {
+  if (!routerRef) {
+    const mod = await import("@/router");
+    routerRef = mod.default;
+  }
+  return routerRef;
+}
+
 // 创建 Axios 实例
 const request = axios.create({
   baseURL: "/api",
@@ -45,8 +58,14 @@ request.interceptors.response.use(
       case 401:
         ElMessage.error("未登录或登录已过期");
         localStorage.removeItem("ops_token");
-        // 跳转到登录页
-        window.location.href = "/login";
+        localStorage.removeItem("ops_username");
+        localStorage.removeItem("ops_role");
+
+        // ★ 用 router.push 无刷新跳转；带上当前路径用于登录后回跳
+        getRouter().then((router) => {
+          const current = router.currentRoute.value.fullPath;
+          router.push(`/login?redirect=${encodeURIComponent(current)}`);
+        });
         break;
       case 403:
         ElMessage.error("权限不足");
