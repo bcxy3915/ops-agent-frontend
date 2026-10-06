@@ -13,7 +13,7 @@ export default defineConfig({
     port: 5173,
     open: true, // 启动时自动打开浏览器
     proxy: {
-      // 后端代理（后面联调时用）
+      // 后端代理
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,
