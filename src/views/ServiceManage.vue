@@ -84,11 +84,27 @@ onMounted(() => {
 async function loadServices() {
   loading.value = true
   try {
-    services.value = await listServices({
-      keyword: filters.keyword,
+    // 只传有值的参数
+    const params = {}
+    if (filters.env) params.env = filters.env
+    if (filters.status) params.status = filters.status
+    let result = await listServices({
       env: filters.env,
       status: filters.status
     })
+
+    // keyword 在前端筛选
+    if (filters.keyword) {
+      const kw = filters.keyword.toLowerCase()
+      result = result.filter(
+        (s) =>
+          s.name.toLowerCase().includes(kw) ||
+          s.baseUrl.toLowerCase().includes(kw) ||
+          (s.owner && s.owner.toLowerCase().includes(kw))
+      )
+    }
+
+    services.value = result
   } catch (error) {
     ElMessage.error(error.message || '加载失败')
   } finally {

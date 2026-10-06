@@ -1,3 +1,6 @@
+/**
+ * 认证 API
+ */
 import request from "./request";
 
 /**
