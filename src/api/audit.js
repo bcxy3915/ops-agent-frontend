@@ -1,8 +1,7 @@
 /**
- * 审计日志 API（真实实现）
+ * 审计日志 API
  */
 import request from "./request";
-
 
 /**
  * 操作类型映射（前端本地维护）

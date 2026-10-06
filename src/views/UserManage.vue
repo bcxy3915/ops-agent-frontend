@@ -25,7 +25,7 @@
     <!-- 表格 -->
     <div class="page-body" v-loading="loading">
       <el-table :data="users" stripe style="width: 100%">
-        <el-table-column prop="id" label="ID" width="100">
+        <el-table-column prop="id" label="ID" width="300">
           <template #default="{ row }">
             <span class="mono">{{ row.id }}</span>
           </template>
