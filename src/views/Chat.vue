@@ -50,23 +50,42 @@
       </div>
     </div>
 
-    <!-- 输入区 -->
-    <ChatInput :sending="chatStore.sending" @send="handleSend" @stop="chatStore.stopStream" />
+    <!-- ★ 输入区：绑定 ref -->
+    <ChatInput ref="chatInputRef" :sending="chatStore.sending" @send="handleSend" @stop="chatStore.stopStream" />
+
+    <!-- ★ 登录弹窗 -->
+    <LoginDialog v-model="loginDialogVisible" @success="handleLoginSuccess" />
+
+    <!-- 未登录提示条 -->
+    <div v-if="!authStore.isLoggedIn" class="login-hint-bar">
+      <el-icon>
+        <InfoFilled />
+      </el-icon>
+      <span>登录后可保存对话历史并使用完整功能</span>
+      <el-button link type="primary" @click="goToLogin">立即登录</el-button>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, nextTick, watch, computed } from 'vue'
-import { Delete } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Delete, InfoFilled } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
+import LoginDialog from '@/components/auth/LoginDialog.vue'   // ★ 关键：import
 
 const chatStore = useChatStore()
 const authStore = useAuthStore()
+const router = useRouter()
 
 const messagesRef = ref(null)
+const chatInputRef = ref(null)          // ★ 输入框引用
+
+const loginDialogVisible = ref(false)    // ★ 登录弹窗
+const pendingQuestion = ref('')          // ★ 待发送的问题
 
 // 会话 ID（暂时随机生成）
 const sessionId = computed(() => {
@@ -81,10 +100,41 @@ const quickQuestions = [
   '内存泄漏排查思路'
 ]
 
-// 发送消息
+function goToLogin() {
+  router.push('/login')
+}
+
+// ★ 发送消息：先检查登录
 async function handleSend(question) {
+  // 1. 未登录 → 弹登录框，保存待发送内容
+  if (!authStore.isLoggedIn) {
+    pendingQuestion.value = question
+    loginDialogVisible.value = true
+    return
+  }
+
+  // 2. 已登录 → 正常发送
+  await doSend(question)
+}
+
+// 实际发送（已登录后）
+async function doSend(question) {
+  // 清空输入框
+  chatInputRef.value?.clear()
+
+  // 发送
   await chatStore.sendMessage(question)
   scrollToBottom()
+}
+
+// ★ 登录成功回调
+async function handleLoginSuccess() {
+  // 如果有待发送的问题，自动发送
+  if (pendingQuestion.value) {
+    const q = pendingQuestion.value
+    pendingQuestion.value = ''
+    await doSend(q)
+  }
 }
 
 // 点击推荐问题
@@ -258,5 +308,17 @@ watch(
   .quick-questions {
     grid-template-columns: 1fr;
   }
+}
+
+.login-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 24px;
+  background: rgba(219, 234, 254, 0.5);
+  border-top: 1px solid rgba(226, 232, 240, 0.6);
+  font-size: 12.5px;
+  color: var(--primary);
 }
 </style>

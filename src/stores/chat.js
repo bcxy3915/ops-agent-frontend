@@ -24,20 +24,19 @@ export const useChatStore = defineStore("chat", () => {
     });
 
     // 2. 添加占位的助手消息
-    const assistantMsg = {
+    messages.value.push({
       id: "a-" + Date.now(),
       role: "assistant",
-      reasoning: "",
-      tools: [],
+      reasoning: "", // 真实后端不返回，留空
+      tools: [], // 真实后端不返回，留空
       answer: "",
       streaming: true,
-    };
-    messages.value.push(assistantMsg);
+    });
     const msgRef = messages.value[messages.value.length - 1];
 
     sending.value = true;
 
-    // 3. 调用流式接口
+    // 3. 调用真实 SSE
     currentStream.value = askStream(question, {
       onChunk: (chunk) => {
         msgRef.answer += chunk;
@@ -53,16 +52,6 @@ export const useChatStore = defineStore("chat", () => {
         sending.value = false;
         currentStream.value = null;
       },
-    });
-
-    // 4. 设置 reasoning 和 tools（同步展示，模拟实际场景）
-    const mock = currentStream.value.mockResponse;
-    msgRef.reasoning = mock.reasoning;
-    msgRef.tools = mock.tools;
-
-    // 模拟思考延迟后开始展示（与 mock 里的 delay 一致）
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(), 800);
     });
   }
 

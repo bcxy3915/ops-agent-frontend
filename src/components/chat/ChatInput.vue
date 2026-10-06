@@ -3,10 +3,9 @@
         <div class="input-inner">
             <div class="input-box">
                 <textarea ref="textareaRef" v-model="text" class="input-textarea" placeholder="输入问题，例如：todo-service 健康吗"
-                    rows="1" :disabled="disabled" @input="autoResize"
-                    @keydown.enter.exact.prevent="handleSend"></textarea>
+                    rows="1" @input="autoResize" @keydown.enter.exact.prevent="handleSend"></textarea>
 
-                <button v-if="!sending" class="send-btn" :disabled="!text.trim() || disabled" @click="handleSend">
+                <button v-if="!sending" class="send-btn" :disabled="!text.trim()" @click="handleSend">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                         stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5" />
@@ -29,8 +28,7 @@
 import { ref, nextTick } from 'vue'
 
 const props = defineProps({
-    sending: { type: Boolean, default: false },
-    disabled: { type: Boolean, default: false }
+    sending: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['send', 'stop'])
@@ -47,16 +45,23 @@ function autoResize() {
 
 function handleSend() {
     const value = text.value.trim()
-    if (!value || props.sending || props.disabled) return
+    if (!value || props.sending) return
 
     emit('send', value)
-    text.value = ''
-    nextTick(() => {
-        if (textareaRef.value) {
-            textareaRef.value.style.height = 'auto'
-        }
-    })
+    // 不清空 text，让父组件决定清不清
 }
+
+// 暴露 clear 方法给父组件调用
+defineExpose({
+    clear() {
+        text.value = ''
+        nextTick(() => {
+            if (textareaRef.value) {
+                textareaRef.value.style.height = 'auto'
+            }
+        })
+    }
+})
 </script>
 
 <style scoped>
