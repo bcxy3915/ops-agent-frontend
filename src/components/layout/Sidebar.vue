@@ -110,13 +110,57 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 // ============ 导航配置 ============
-const navItems = [
-  { path: '/chat', label: '对话', icon: 'ChatDotRound' },
-  { path: '/services', label: '服务管理', icon: 'Monitor' },
-  { path: '/metrics', label: '指标监控', icon: 'TrendCharts' },
-  { path: '/audit', label: '审计日志', icon: 'Document' },
-  { path: '/users', label: '用户管理', icon: 'User' }
+// roles: 允许访问的角色列表，不写表示所有登录用户可见
+const ALL_NAV_ITEMS = [
+  {
+    path: '/chat',
+    label: '对话',
+    icon: 'ChatDotRound'
+    // 无 roles 字段 → 所有人可见（包括未登录）
+  },
+  {
+    path: '/services',
+    label: '服务管理',
+    icon: 'Monitor',
+    roles: ['ADMIN', 'OPERATOR', 'VIEWER']
+  },
+  {
+    path: '/metrics',
+    label: '指标监控',
+    icon: 'TrendCharts',
+    roles: ['ADMIN', 'OPERATOR', 'VIEWER']
+  },
+  {
+    path: '/audit',
+    label: '审计日志',
+    icon: 'Document',
+    roles: ['ADMIN']    // ★ 仅管理员
+  },
+  {
+    path: '/users',
+    label: '用户管理',
+    icon: 'User',
+    roles: ['ADMIN']    // ★ 仅管理员
+  }
 ]
+
+/**
+ * 根据当前用户角色过滤出可见菜单
+ */
+const navItems = computed(() => {
+  const role = authStore.role
+
+  return ALL_NAV_ITEMS.filter((item) => {
+    // 无 roles 字段 → 所有人可见
+    if (!item.roles) return true
+
+    // 未登录 → 不显示有 roles 限制的菜单
+    if (!authStore.isLoggedIn) return false
+
+    // 检查角色是否在允许列表
+    return item.roles.includes(role)
+  })
+})
 
 // 当前路由高亮判断
 function isActive(path) {

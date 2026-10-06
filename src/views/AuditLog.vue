@@ -23,7 +23,7 @@
 
     <!-- 表格 -->
     <div class="page-body" v-loading="loading">
-      <el-table :data="logs" stripe style="width: 100%" row-key="id" @row-click="handleRowClick">
+      <el-table :data="logs" stripe style="width: 100%" row-key="id">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand-detail">
@@ -67,9 +67,10 @@
           </template>
         </el-table-column>
 
+        <!-- ★ 修改：用映射函数显示中文 -->
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            {{ row.operationLabel }}
+            {{ getOperationLabel(row.operation) }}
           </template>
         </el-table-column>
 
@@ -87,7 +88,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="耗时" width="100">
+        <el-table-column label="耗时" width="120">
           <template #default="{ row }">
             <span class="mono">{{ row.durationMs }}ms</span>
           </template>
@@ -100,7 +101,8 @@
         </el-table-column>
       </el-table>
     </div>
-    <!-- 分页 -->
+
+    <!-- 分页：固定在底部 -->
     <div class="pagination-wrap">
       <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.size"
         :page-sizes="[10, 20, 50, 100]" :total="pagination.total" layout="total, sizes, prev, pager, next, jumper"
@@ -112,7 +114,12 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listAuditLogs, getOperationTypes, getUsernames } from '@/api/audit'
+import {
+  listAuditLogs,
+  getOperationTypes,
+  getUsernames,
+  getOperationLabel
+} from '@/api/audit'
 
 const operationTypes = ref([])
 const usernames = ref([])
@@ -142,12 +149,15 @@ async function loadLogs() {
   loading.value = true
   try {
     const res = await listAuditLogs({
-      ...filters,
+      username: filters.username,
+      operation: filters.operation,
+      result: filters.result,
       page: pagination.page,
       size: pagination.size
     })
-    logs.value = res.records
-    pagination.total = res.total
+
+    logs.value = res.records || []
+    pagination.total = res.total || 0
   } catch (error) {
     ElMessage.error(error.message || '加载失败')
   } finally {
@@ -172,12 +182,6 @@ function handleSizeChange() {
   loadLogs()
 }
 
-function handleRowClick(row, column, event) {
-  // 点击展开列之外的区域切换展开
-  // 简单做法：默认点击整行展开
-  // （el-table 的 expand 列会自己处理，这里不用做）
-}
-
 function formatTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -192,7 +196,6 @@ function formatTime(iso) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* ★ 防止整体滚动 */
 }
 
 .page-header {
@@ -221,12 +224,10 @@ function formatTime(iso) {
   gap: 10px;
 }
 
-/* 表格区：占满剩余空间，独立滚动 */
 .page-body {
   flex: 1;
   overflow-y: auto;
   padding: 20px 24px 0;
-  /* 底部不加 padding，分页区自带 */
 }
 
 .mono {
@@ -261,7 +262,7 @@ function formatTime(iso) {
   color: var(--danger);
 }
 
-/* ★ 分页区：固定在底部 */
+/* ★ 分页固定在底部 */
 .pagination-wrap {
   display: flex;
   justify-content: flex-end;
@@ -273,7 +274,6 @@ function formatTime(iso) {
   flex-shrink: 0;
 }
 
-/* 展开详情 */
 .expand-detail {
   padding: 12px 24px 16px 60px;
   display: grid;

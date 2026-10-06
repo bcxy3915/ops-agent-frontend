@@ -1,136 +1,70 @@
 /**
- * 审计日志 API（Mock）
+ * 审计日志 API（真实实现）
+ */
+import request from "./request";
+
+
+/**
+ * 操作类型映射（前端本地维护）
  *
- * P5-8 联调时：
- *   listAuditLogs → request.get('/audit', { params })
- *   getAuditDetail → request.get(`/audit/${id}`)
+ * 后端返回的是英文枚举值，前端负责映射成中文标签。
  */
-
-// ============ Mock 数据 ============
-const operationTypes = [
-  { value: "LOGIN", label: "登录" },
-  { value: "REGISTER_SERVICE", label: "注册服务" },
-  { value: "UPDATE_SERVICE", label: "更新服务" },
-  { value: "DELETE_SERVICE", label: "删除服务" },
-  { value: "CHECK_HEALTH", label: "健康检查" },
-  { value: "RELOAD_KNOWLEDGE", label: "重载知识库" },
-];
-
-const usernames = ["admin", "operator", "viewer"];
-
-function randomItem(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-// 生成 200 条假日志
-let mockLogs = Array.from({ length: 200 }, (_, i) => {
-  const operation = randomItem(operationTypes);
-  const username = randomItem(usernames);
-  const success = Math.random() > 0.15;
-  const date = new Date(
-    Date.now() - i * 15 * 60 * 1000 - Math.random() * 3600 * 1000
-  );
-
-  return {
-    id: 200 - i,
-    username,
-    operation: operation.value,
-    operationLabel: operation.label,
-    target: ["LOGIN"].includes(operation.value) ? username : "todo-service",
-    method: ["LOGIN"].includes(operation.value) ? "POST" : "POST",
-    uri: getUri(operation.value),
-    params: getParams(operation.value, username),
-    result: success ? "SUCCESS" : "FAILURE",
-    errorMessage: success ? null : "用户名或密码错误",
-    ip: "127.0.0.1",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    durationMs: 50 + Math.floor(Math.random() * 800),
-    createdAt: date.toISOString(),
-  };
-});
-
-function getUri(op) {
-  const map = {
-    LOGIN: "/api/auth/login",
-    REGISTER_SERVICE: "/api/services",
-    UPDATE_SERVICE: "/api/services/todo-service",
-    DELETE_SERVICE: "/api/services/todo-service",
-    CHECK_HEALTH: "/api/services/todo-service/check",
-    RELOAD_KNOWLEDGE: "/api/ops/knowledge/load",
-  };
-  return map[op] || "/api/xxx";
-}
-
-function getParams(op, username) {
-  if (op === "LOGIN") {
-    return JSON.stringify({ request: { username, password: "***" } });
-  }
-  if (op === "REGISTER_SERVICE") {
-    return JSON.stringify({
-      request: {
-        name: "todo-service",
-        baseUrl: "http://localhost:8081",
-        owner: "开发者",
-      },
-    });
-  }
-  return JSON.stringify({ name: "todo-service" });
-}
-
-function delay(ms = 300) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ============ API 方法 ============
+const OPERATION_LABELS = {
+  LOGIN: "登录",
+  REGISTER_SERVICE: "注册服务",
+  UPDATE_SERVICE: "更新服务",
+  DELETE_SERVICE: "删除服务",
+  CHECK_HEALTH: "健康检查",
+  RELOAD_KNOWLEDGE: "重载知识库",
+  CREATE_USER: "创建用户",
+};
 
 /**
- * 分页查询审计日志
- */
-export async function listAuditLogs(params = {}) {
-  await delay();
-
-  let result = [...mockLogs];
-
-  if (params.username) {
-    result = result.filter((l) => l.username === params.username);
-  }
-  if (params.operation) {
-    result = result.filter((l) => l.operation === params.operation);
-  }
-  if (params.result) {
-    result = result.filter((l) => l.result === params.result);
-  }
-  if (params.startTime) {
-    result = result.filter(
-      (l) => new Date(l.createdAt) >= new Date(params.startTime)
-    );
-  }
-  if (params.endTime) {
-    result = result.filter(
-      (l) => new Date(l.createdAt) <= new Date(params.endTime)
-    );
-  }
-
-  result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  const page = params.page || 1;
-  const size = params.size || 20;
-  const total = result.length;
-  const records = result.slice((page - 1) * size, page * size);
-
-  return { records, total, current: page, size };
-}
-
-/**
- * 操作类型选项
+ * 操作类型下拉选项
  */
 export function getOperationTypes() {
-  return operationTypes;
+  return Object.entries(OPERATION_LABELS).map(([value, label]) => ({
+    value,
+    label,
+  }));
+}
+
+/**
+ * 操作类型 → 中文标签
+ */
+export function getOperationLabel(operation) {
+  return OPERATION_LABELS[operation] || operation;
 }
 
 /**
  * 用户列表（用于筛选下拉）
+ *
+ * 暂时写死，P5-8-5 做用户管理联调时可以改成从 /api/users 拉取
  */
 export function getUsernames() {
-  return usernames;
+  return ["admin", "operator", "viewer"];
+}
+
+/**
+ * 分页查询审计日志
+ *
+ * @param {object} params
+ *   - username: 用户名
+ *   - operation: 操作类型
+ *   - result: SUCCESS / FAILURE
+ *   - page: 页码（默认 1）
+ *   - size: 每页条数（默认 20）
+ */
+export async function listAuditLogs(params = {}) {
+  // 只传有值的参数
+  const query = {};
+  if (params.username) query.username = params.username;
+  if (params.operation) query.operation = params.operation;
+  if (params.result) query.result = params.result;
+  query.page = params.page || 1;
+  query.size = params.size || 20;
+
+  // 后端返回 MyBatis-Plus Page 结构：{ records, total, size, current, pages }
+  // 响应拦截器已经解包了 data 层
+  return request.get("/audit", { params: query });
 }

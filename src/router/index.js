@@ -17,7 +17,6 @@ const routes = [
         name: "Chat",
         component: () => import("@/views/Chat.vue"),
         meta: { title: "对话" },
-        // 不需要登录
       },
       {
         path: "services",
@@ -35,17 +34,25 @@ const routes = [
         path: "audit",
         name: "AuditLog",
         component: () => import("@/views/AuditLog.vue"),
-        meta: { title: "审计日志", requiresAuth: true },
+        meta: {
+          title: "审计日志",
+          requiresAuth: true,
+          roles: ["ADMIN"], // ★ 仅 ADMIN
+        },
       },
       {
         path: "users",
         name: "UserManage",
         component: () => import("@/views/UserManage.vue"),
-        meta: { title: "用户管理", requiresAuth: true },
+        meta: {
+          title: "用户管理",
+          requiresAuth: true,
+          roles: ["ADMIN"], // ★ 仅 ADMIN
+        },
       },
     ],
   },
-  // 404 兜底
+  // 404兜底
   {
     path: "/:pathMatch(.*)*",
     redirect: "/chat",
@@ -60,12 +67,13 @@ const router = createRouter({
 // ========== 路由守卫 ==========
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem("ops_token");
+  const role = localStorage.getItem("ops_role");
   const isLoggedIn = !!token;
 
   // 动态设置浏览器标题
   document.title = to.meta.title ? `${to.meta.title} · Ops Agent` : "Ops Agent";
 
-  // 1. 需要登录但未登录 → 跳登录页（记住原路径）
+  // 1. 需要登录但未登录 → 跳登录页
   if (to.meta.requiresAuth && !isLoggedIn) {
     next(`/login?redirect=${encodeURIComponent(to.fullPath)}`);
     return;
@@ -77,7 +85,16 @@ router.beforeEach((to, from, next) => {
     return;
   }
 
-  // 3. 其他情况放行
+  // 3. ★ 角色权限检查
+  if (to.meta.roles && isLoggedIn) {
+    if (!to.meta.roles.includes(role)) {
+      // 权限不足 → 跳首页
+      next("/chat");
+      return;
+    }
+  }
+
+  // 4. 其他情况放行
   next();
 });
 
