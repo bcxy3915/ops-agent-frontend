@@ -20,4 +20,19 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    // jsdom 环境：模拟浏览器 API（localStorage、window 等）
+    environment: "jsdom",
+    // 全局注入 describe / it / expect，省去每个文件 import
+    globals: true,
+    // 测试文件匹配规则
+    include: ["src/**/*.{test,spec}.{js,ts}"],
+    // 覆盖率配置
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/utils/**", "src/stores/**"],
+      exclude: ["**/*.test.js", "**/node_modules/**"],
+    },
+  },
 });
