@@ -1,0 +1,45 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 安装 Node 22（会拉最新的补丁版，≥ 22.22.2，避开 EBADENGINE 警告）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      # 3. 严格按 package-lock.json 安装依赖
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. 跑单元测试
+      - name: Run unit tests
+        run: npm run test
+
+      # 5. 验证生产构建能通过（测试过了不代表能打包）
+      - name: Build
+        run: npm run build
+
+      # 6. 上传测试报告
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-reports
+          path: coverage/
+          retention-days: 7
