@@ -25,6 +25,31 @@
                 <span></span><span></span><span></span>
             </span>
         </div>
+
+        <!-- 知识来源引用卡片（citations） -->
+        <div v-if="citations.length" class="citations">
+            <div class="citations-hd">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                知识来源（{{ citations.length }}）
+            </div>
+            <div class="citation" v-for="(c, i) in citations" :key="i">
+                <span class="cit-idx">[{{ i + 1 }}]</span>
+                <div class="cit-main">
+                    <div class="cit-title">
+                        <span class="cit-title-text">{{ c.title }}</span>
+                        <span class="cit-tag" :class="layerTagClass(c.layer)">{{ layerLabel(c.layer) }}</span>
+                        <span class="cit-tag" :class="statusTagClass(c.trustStatus)">{{ statusLabel(c.trustStatus) }}</span>
+                    </div>
+                    <div class="cit-snippet" v-html="c.snippet || ''" />
+                    <div class="cit-meta">
+                        <template v-if="c.version">v{{ c.version }} · </template>
+                        <template v-if="c.score != null">相关度 {{ scoreText(c.score) }} · </template>
+                        <span>{{ c.source || '知识库' }}</span>
+                        <template v-if="c.section"> · {{ c.section }}</template>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -33,6 +58,7 @@ import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import ReasoningBlock from './ReasoningBlock.vue'
 import ToolCallCard from './ToolCallCard.vue'
+import { LAYER_MAP, STATUS_MAP } from '@/views/knowledge/kb-utils'
 
 const props = defineProps({
     message: { type: Object, required: true }
@@ -41,6 +67,29 @@ const props = defineProps({
 const isError = computed(() => {
     return props.message.answer && props.message.answer.includes('⚠️')
 })
+
+// 知识引用（后端首个 SSE 事件推送，消息对象可能为空数组）
+const citations = computed(() => props.message.citations || [])
+
+// 层级/状态文案与样式映射（复用知识库枚举）
+function layerLabel(key) {
+    return LAYER_MAP[key]?.label || '知识'
+}
+function layerTagClass(key) {
+    return LAYER_MAP[key] ? `cit-tag-${LAYER_MAP[key].cls.replace('kb-tag-', '')}` : 'cit-tag-info'
+}
+function statusLabel(key) {
+    return STATUS_MAP[key]?.label || '—'
+}
+function statusTagClass(key) {
+    return STATUS_MAP[key] ? `cit-tag-${STATUS_MAP[key].cls.replace('kb-tag-', '')}` : 'cit-tag-info'
+}
+
+function scoreText(score) {
+    const n = Number(score)
+    if (Number.isNaN(n)) return '-'
+    return n.toFixed(2)
+}
 
 // Markdown 渲染器
 const md = new MarkdownIt({
@@ -257,6 +306,135 @@ function formatTime(id) {
     border-left-color: #F87171;
     background: rgba(254, 226, 226, 0.6);
     color: #B91C1C;
+}
+
+/* ============================================================
+   知识来源引用卡片（citations）
+   ============================================================ */
+.citations {
+    margin-top: 12px;
+    background: linear-gradient(180deg, #F8FAFC 0%, #FDFEFF 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.citations-hd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.citations-hd svg {
+    color: var(--primary);
+}
+
+.citation {
+    display: flex;
+    gap: 10px;
+    padding: 10px 2px;
+    border-top: 1px dashed var(--border-light);
+}
+
+.citation:first-of-type {
+    border-top: none;
+    padding-top: 4px;
+}
+
+.cit-idx {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    font-family: ui-monospace, monospace;
+    flex-shrink: 0;
+    padding-top: 1px;
+}
+
+.cit-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.cit-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cit-title-text {
+    word-break: break-word;
+}
+
+/* 层级/状态小标签（视觉对齐知识库 kb-tag） */
+.cit-tag {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.cit-tag-primary {
+    background: #EFF6FF;
+    color: var(--primary);
+}
+
+.cit-tag-teal {
+    background: #F0FDFA;
+    color: #0D9488;
+}
+
+.cit-tag-warning {
+    background: #FFFBEB;
+    color: var(--warning);
+}
+
+.cit-tag-success {
+    background: #ECFDF5;
+    color: var(--success);
+}
+
+.cit-tag-info {
+    background: #F1F5F9;
+    color: var(--text-secondary);
+}
+
+.cit-tag-danger {
+    background: #FEF2F2;
+    color: var(--danger);
+}
+
+.cit-snippet {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+/* snippet 中的命中词高亮（后端已用 <mark> 标记） */
+.cit-snippet :deep(mark) {
+    background: #FEF3C7;
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.cit-meta {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
 }
 
 @keyframes blink {

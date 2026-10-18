@@ -95,6 +95,8 @@ export const useChatStore = defineStore("chat", () => {
         answer: m.content,
         reasoning: m.reasoning || "",
         tools: m.tools || [],
+        // 历史消息后端未持久化引用，保持空数组（新建会话的流式回复才带引用）
+        citations: m.citations || [],
         streaming: false,
       }));
     } catch (e) {
@@ -139,7 +141,7 @@ export const useChatStore = defineStore("chat", () => {
    * 发送消息
    *   1. 添加用户消息到本地
    *   2. 添加空的助手消息占位
-   *   3. 调用 askStream，逐字更新助手消息内容
+   *   3. 调用 askStream，逐字更新助手消息内容，citations 事件写入引用列表
    *   4. 完成后刷新会话列表（更新标题/计数）
    */
   async function sendMessage(question) {
@@ -161,6 +163,7 @@ export const useChatStore = defineStore("chat", () => {
       role: "assistant",
       reasoning: "",
       tools: [],
+      citations: [],
       answer: "",
       streaming: true,
     });
@@ -172,6 +175,10 @@ export const useChatStore = defineStore("chat", () => {
     currentStream.value = askStream(sid, question, {
       onChunk: (chunk) => {
         msgRef.answer = (msgRef.answer || "") + chunk;
+      },
+      // ★ 知识引用：后端首个 SSE 事件推送结构化引用列表，写入消息对象
+      onCitations: (list) => {
+        msgRef.citations = list || [];
       },
       onDone: async () => {
         // ★ 关键：流式结束后，强制触发一次完整的 Markdown 渲染

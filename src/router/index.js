@@ -9,6 +9,7 @@ const routes = [
     component: () => import("@/views/Login.vue"),
     meta: { title: "登录" },
   },
+  // ========== 对话工作台壳（左栏：新建对话 + 会话历史 + 管理后台入口） ==========
   {
     path: "/",
     component: () => import("@/components/layout/AppLayout.vue"),
@@ -25,6 +26,19 @@ const routes = [
         component: () => import("@/views/HistoryChat.vue"),
         meta: { title: "历史对话" },
       },
+    ],
+  },
+  // ========== 管理控制台壳（分组导航：监控运维 / 知识库 / 系统设置） ==========
+  {
+    path: "/admin",
+    component: () => import("@/components/layout/AdminLayout.vue"),
+    children: [
+      {
+        path: "home",
+        name: "AdminHome",
+        component: () => import("@/views/admin/AdminHome.vue"),
+        meta: { title: "管理后台", requiresAuth: true },
+      },
       {
         path: "services",
         name: "Services",
@@ -36,6 +50,12 @@ const routes = [
         name: "Metrics",
         component: () => import("@/views/Metrics.vue"),
         meta: { title: "指标监控", requiresAuth: true },
+      },
+      {
+        path: "knowledge",
+        name: "Knowledge",
+        component: () => import("@/views/knowledge/Knowledge.vue"),
+        meta: { title: "知识库", requiresAuth: true },
       },
       {
         path: "audit",
@@ -51,6 +71,12 @@ const routes = [
       },
     ],
   },
+  // ========== 旧路径兼容重定向（迁移到 /admin/*） ==========
+  { path: "/services", redirect: "/admin/services" },
+  { path: "/metrics", redirect: "/admin/metrics" },
+  { path: "/knowledge", redirect: "/admin/knowledge" },
+  { path: "/audit", redirect: "/admin/audit" },
+  { path: "/users", redirect: "/admin/users" },
   {
     path: "/:pathMatch(.*)*",
     redirect: "/chat",

@@ -23,17 +23,6 @@
       </button>
     </div>
 
-    <!-- ========== 导航 ========== -->
-    <nav class="nav">
-      <router-link v-for="item in navItems" :key="item.path" :to="item.path" class="nav-item"
-        :class="{ active: isActive(item.path) }">
-        <el-icon class="nav-icon">
-          <component :is="item.icon" />
-        </el-icon>
-        {{ item.label }}
-      </router-link>
-    </nav>
-
     <!-- ========== 会话历史 ========== -->
     <div class="history">
       <div v-if="!authStore.isLoggedIn" class="history-empty">
@@ -97,6 +86,22 @@
       </template>
     </div>
 
+    <!-- ========== 管理后台入口 ========== -->
+    <div v-if="authStore.isLoggedIn" class="admin-entry" @click="goAdmin">
+      <div class="admin-entry-icon">
+        <el-icon>
+          <Grid />
+        </el-icon>
+      </div>
+      <div class="admin-entry-info">
+        <div class="admin-entry-title">管理后台</div>
+        <div class="admin-entry-sub">服务 · 指标 · 知识库 · 系统</div>
+      </div>
+      <el-icon class="admin-entry-arrow" color="#94A3B8">
+        <ArrowRight />
+      </el-icon>
+    </div>
+
     <!-- ========== 底部用户区 ========== -->
     <div v-if="authStore.isLoggedIn" class="user-area-wrapper">
       <el-dropdown popper-class="sidebar-user-dropdown" trigger="click" placement="top-start" @command="handleCommand">
@@ -116,6 +121,11 @@
               <el-icon>
                 <User />
               </el-icon>个人信息
+            </el-dropdown-item>
+            <el-dropdown-item command="admin" divided>
+              <el-icon>
+                <Grid />
+              </el-icon>管理后台
             </el-dropdown-item>
             <el-dropdown-item command="logout" divided>
               <el-icon>
@@ -150,7 +160,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   MoreFilled, UserFilled, ArrowRight, User, SwitchButton,
-  Lock, ChatLineSquare, Expand, Edit, Delete
+  Lock, ChatLineSquare, Expand, Edit, Delete, Grid
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -162,30 +172,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 
-// ============ 导航配置 ============
-const ALL_NAV_ITEMS = [
-  { path: '/chat', label: '对话', icon: 'ChatDotRound' },
-  { path: '/services', label: '服务管理', icon: 'Monitor', roles: ['ADMIN', 'OPERATOR', 'VIEWER'] },
-  { path: '/metrics', label: '指标监控', icon: 'TrendCharts', roles: ['ADMIN', 'OPERATOR', 'VIEWER'] },
-  { path: '/audit', label: '审计日志', icon: 'Document', roles: ['ADMIN'] },
-  { path: '/users', label: '用户管理', icon: 'User', roles: ['ADMIN'] }
-]
-
-const navItems = computed(() => {
-  const role = authStore.role
-  return ALL_NAV_ITEMS.filter((item) => {
-    if (!item.roles) return true
-    if (!authStore.isLoggedIn) return false
-    return item.roles.includes(role)
-  })
-})
-
 function goToHistory() {
   router.push('/chat/history')
-}
-
-function isActive(path) {
-  return route.path === path || route.path.startsWith(path + '/')
 }
 
 // ============ 会话列表分组 ============
@@ -224,6 +212,11 @@ function handleNewChat() {
 
 function goToLogin() {
   router.push('/login')
+}
+
+// ★ 进入管理后台
+function goAdmin() {
+  router.push('/admin/home')
 }
 
 async function selectSession(sessionId) {
@@ -297,6 +290,8 @@ async function handleCommand(command) {
     }
   } else if (command === 'profile') {
     ElMessage.info('个人信息页面待实现')
+  } else if (command === 'admin') {
+    goAdmin()
   }
 }
 
@@ -370,43 +365,6 @@ const roleLabel = computed(() => {
   box-shadow: 0 4px 16px rgba(30, 64, 175, 0.3);
 }
 
-/* ============ 导航 ============ */
-.nav {
-  padding: 8px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 13.5px;
-  transition: all 0.15s;
-  text-decoration: none;
-  margin-bottom: 1px;
-}
-
-.nav-item:hover {
-  background: rgba(30, 64, 175, 0.06);
-  color: var(--text-primary);
-}
-
-.nav-item.active {
-  background: linear-gradient(135deg, rgba(219, 234, 254, 0.9) 0%, rgba(224, 231, 255, 0.7) 100%);
-  color: var(--primary);
-  font-weight: 500;
-  box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.1);
-}
-
-.nav-icon {
-  width: 18px;
-  font-size: 16px;
-}
-
 /* ============ 会话历史 ============ */
 .history {
   flex: 1;
@@ -462,7 +420,6 @@ const roleLabel = computed(() => {
   font-weight: 600;
 }
 
-/* ★ 修改：history-item 使用 flex 布局，标题占满剩余空间，右侧三个点 */
 .history-item {
   display: flex;
   align-items: center;
@@ -496,7 +453,7 @@ const roleLabel = computed(() => {
   white-space: nowrap;
 }
 
-/* ★ 新增：三个点按钮 */
+/* ★ 三个点按钮 */
 .item-more {
   display: none;
   align-items: center;
@@ -511,7 +468,6 @@ const roleLabel = computed(() => {
   transition: all 0.15s;
 }
 
-/* 悬浮在会话项上时显示三个点 */
 .history-item:hover .item-more {
   display: flex;
 }
@@ -519,6 +475,63 @@ const roleLabel = computed(() => {
 .item-more:hover {
   background: rgba(0, 0, 0, 0.08);
   color: #1F2329;
+}
+
+/* ============ 管理后台入口 ============ */
+.admin-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(30, 64, 175, 0.12);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.5) 0%, rgba(224, 231, 255, 0.35) 100%);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-entry:hover {
+  border-color: rgba(30, 64, 175, 0.25);
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.8) 0%, rgba(224, 231, 255, 0.6) 100%);
+  box-shadow: 0 2px 8px rgba(30, 64, 175, 0.08);
+}
+
+.admin-entry-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #3B82F6 0%, #1E40AF 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(30, 64, 175, 0.25);
+}
+
+.admin-entry-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-entry-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-entry-arrow {
+  flex-shrink: 0;
 }
 
 /* ============ 底部用户区 ============ */

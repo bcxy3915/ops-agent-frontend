@@ -30,9 +30,14 @@ function handle401() {
 }
 
 /**
- * 流式问答
+ * 流式问答（SSE）
+ *
+ * 后端事件格式：
+ *   - 首个事件：event=citations, data=引用列表 JSON → 交给 onCitations
+ *   - 默认事件：data=答案 token → 交给 onChunk 逐字追加
+ *   - 结束事件：data=[DONE] → onDone
  */
-export function askStream(sessionId, question, { onChunk, onDone, onError }) {
+export function askStream(sessionId, question, { onChunk, onDone, onError, onCitations }) {
   const authStore = useAuthStore();
 
   const url = `/api/ops/ask/stream?question=${encodeURIComponent(
@@ -81,20 +86,39 @@ export function askStream(sessionId, question, { onChunk, onDone, onError }) {
 
         for (const event of events) {
           const lines = event.split("\n");
+          // SSE 事件名：默认 message 事件（答案 token），首个事件为 citations
+          let eventName = "";
+          let dataStr = "";
           for (const line of lines) {
-            if (line.startsWith("data:")) {
-              const data = line.slice(5).trim();
-
-              if (data === "[DONE]") {
-                stopped = true;
-                onDone && onDone();
-                return;
-              }
-
-              if (data) {
-                onChunk && onChunk(data);
-              }
+            if (line.startsWith("event:")) {
+              eventName = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              dataStr += (dataStr ? "\n" : "") + line.slice(5).trim();
             }
+          }
+
+          if (!dataStr) continue;
+
+          if (dataStr === "[DONE]") {
+            stopped = true;
+            onDone && onDone();
+            return;
+          }
+
+          // citations 事件：结构化引用列表（JSON），交给 onCitations，不混入答案
+          if (eventName === "citations") {
+            try {
+              const list = JSON.parse(dataStr);
+              onCitations && onCitations(Array.isArray(list) ? list : []);
+            } catch (e) {
+              console.warn("citations 解析失败:", e);
+            }
+            continue;
+          }
+
+          // 默认事件：答案 token
+          if (dataStr) {
+            onChunk && onChunk(dataStr);
           }
         }
       }
