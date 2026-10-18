@@ -4,7 +4,7 @@
     <div class="page-header">
       <div class="page-header-left">
         <h2 class="page-title">管理后台</h2>
-        <span class="page-subtitle">服务、指标、知识库与系统设置统一管理</span>
+        <span class="page-subtitle">服务、指标、告警、知识库与系统设置统一管理</span>
       </div>
       <div class="page-header-actions">
         <el-button @click="goChat">
@@ -20,10 +20,11 @@
     <div class="admin-hero">
       <div class="hero-info">
         <div class="hero-greet">你好，{{ authStore.username }} 👋</div>
-        <div class="hero-desc">一站式管理你的运维资产：监控服务健康、沉淀运维知识、追踪审计记录。</div>
+        <div class="hero-desc">一站式管理你的运维资产：监控服务健康、处理告警、沉淀运维知识、追踪审计记录。</div>
         <div class="hero-tags">
           <span class="hero-tag">服务管理</span>
           <span class="hero-tag">指标监控</span>
+          <span class="hero-tag">告警 · 通知</span>
           <span class="hero-tag">知识库</span>
           <span class="hero-tag" v-if="isAdmin">审计 · 用户</span>
         </div>
@@ -73,7 +74,7 @@
             </el-icon>
           </div>
 
-          <div class="home-card hc-pending" @click="notReady">
+          <div class="home-card" @click="go('/admin/alerts')">
             <div class="hc-icon hc-amber">
               <el-icon>
                 <Bell />
@@ -81,12 +82,14 @@
             </div>
             <div class="hc-body">
               <div class="hc-title">告警中心</div>
-              <div class="hc-desc">告警事件与处理跟踪</div>
+              <div class="hc-desc">告警事件、诊断与处理跟踪</div>
             </div>
-            <span class="hc-tag-pending">待开发</span>
+            <el-icon class="hc-arrow" color="#CBD5E1">
+              <ArrowRight />
+            </el-icon>
           </div>
 
-          <div class="home-card hc-pending" @click="notReady">
+          <div class="home-card" @click="go('/admin/alert-rules')">
             <div class="hc-icon hc-slate">
               <el-icon>
                 <SetUp />
@@ -94,9 +97,11 @@
             </div>
             <div class="hc-body">
               <div class="hc-title">告警规则</div>
-              <div class="hc-desc">阈值与规则配置</div>
+              <div class="hc-desc">阈值触发与规则配置</div>
             </div>
-            <span class="hc-tag-pending">待开发</span>
+            <el-icon class="hc-arrow" color="#CBD5E1">
+              <ArrowRight />
+            </el-icon>
           </div>
         </div>
       </div>
@@ -126,7 +131,7 @@
       <div v-if="isAdmin" class="home-group">
         <div class="home-group-label">系统设置</div>
         <div class="home-cards">
-          <div class="home-card hc-pending" @click="notReady">
+          <div class="home-card" @click="go('/admin/channels')">
             <div class="hc-icon hc-violet">
               <el-icon>
                 <ChatDotRound />
@@ -134,9 +139,11 @@
             </div>
             <div class="hc-body">
               <div class="hc-title">通知渠道</div>
-              <div class="hc-desc">邮件/Webhook 渠道配置</div>
+              <div class="hc-desc">邮件/Webhook 渠道配置与测试</div>
             </div>
-            <span class="hc-tag-pending">待开发</span>
+            <el-icon class="hc-arrow" color="#CBD5E1">
+              <ArrowRight />
+            </el-icon>
           </div>
 
           <div class="home-card" @click="go('/admin/audit')">
@@ -177,7 +184,6 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, ArrowRight, Monitor, TrendCharts, Bell, SetUp,
   Collection, ChatDotRound, Document, User
@@ -195,10 +201,6 @@ function go(path) {
 
 function goChat() {
   router.push('/chat')
-}
-
-function notReady() {
-  ElMessage.info('该模块开发中，即将上线，敬请期待')
 }
 </script>
 
@@ -366,27 +368,5 @@ function notReady() {
 
 .hc-arrow {
   flex-shrink: 0;
-}
-
-/* ============ 待开发 ============ */
-.hc-pending {
-  cursor: not-allowed;
-  opacity: 0.78;
-}
-
-.hc-pending:hover {
-  transform: none;
-  border-color: rgba(226, 232, 240, 0.8);
-  box-shadow: none;
-}
-
-.hc-tag-pending {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #F1F5F9;
-  color: #94A3B8;
-  font-size: 11px;
-  flex-shrink: 0;
-  font-weight: 500;
 }
 </style>

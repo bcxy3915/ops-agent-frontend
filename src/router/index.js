@@ -52,10 +52,34 @@ const routes = [
         meta: { title: "指标监控", requiresAuth: true },
       },
       {
+        path: "alerts",
+        name: "AlertEvents",
+        component: () => import("@/views/admin/alerts/AlertEvents.vue"),
+        meta: { title: "告警中心", requiresAuth: true },
+      },
+      {
+        path: "alerts/:id",
+        name: "AlertDetail",
+        component: () => import("@/views/admin/alerts/AlertDetail.vue"),
+        meta: { title: "告警详情", requiresAuth: true },
+      },
+      {
+        path: "alert-rules",
+        name: "AlertRules",
+        component: () => import("@/views/admin/alerts/AlertRules.vue"),
+        meta: { title: "告警规则", requiresAuth: true },
+      },
+      {
         path: "knowledge",
         name: "Knowledge",
         component: () => import("@/views/knowledge/Knowledge.vue"),
         meta: { title: "知识库", requiresAuth: true },
+      },
+      {
+        path: "channels",
+        name: "NotificationChannels",
+        component: () => import("@/views/admin/alerts/NotificationChannels.vue"),
+        meta: { title: "通知渠道", requiresAuth: true },
       },
       {
         path: "audit",

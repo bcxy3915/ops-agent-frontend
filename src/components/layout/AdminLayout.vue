@@ -86,7 +86,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, MoreFilled, User, SwitchButton,
-  Monitor, TrendCharts, Collection, Document, User as UserIcon
+  Monitor, TrendCharts, Bell, SetUp, Collection, Document, User as UserIcon,
+  ChatDotRound
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -107,6 +108,8 @@ const navGroups = computed(() => {
       items: [
         { path: '/admin/services', label: '服务管理', icon: Monitor },
         { path: '/admin/metrics', label: '指标监控', icon: TrendCharts },
+        { path: '/admin/alerts', label: '告警中心', icon: Bell },
+        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp },
       ],
     },
     {
@@ -122,6 +125,7 @@ const navGroups = computed(() => {
       label: '系统设置',
       visible: isAdmin,
       items: [
+        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound },
         { path: '/admin/audit', label: '审计日志', icon: Document },
         { path: '/admin/users', label: '用户管理', icon: UserIcon },
       ],
