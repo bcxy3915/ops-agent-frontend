@@ -31,7 +31,7 @@
         <template v-for="group in navGroups" :key="group.key">
           <div v-if="group.visible" class="adm-nav-group">
             <div class="adm-nav-label">{{ group.label }}</div>
-            <router-link v-for="item in group.items" :key="item.path" :to="item.path" class="adm-nav-item"
+            <router-link v-for="item in group.items.filter((i) => i.visible !== false)" :key="item.path" :to="item.path" class="adm-nav-item"
               :class="{ active: isActive(item.path) }">
               <el-icon class="adm-nav-icon">
                 <component :is="item.icon" />
@@ -97,19 +97,20 @@ const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 
-// ============ 分组导航（本轮只挂载已实现页面，告警/通知等随指令加入） ============
+// ============ 分组导航（权限矩阵：监控运维全角色可见，告警规则仅 ADMIN/OPERATOR，系统设置仅 ADMIN） ============
 const navGroups = computed(() => {
   const isAdmin = authStore.role === 'ADMIN'
+  const isOperator = authStore.role === 'ADMIN' || authStore.role === 'OPERATOR'
   return [
     {
       key: 'monitor',
       label: '监控运维',
       visible: true,
       items: [
-        { path: '/admin/services', label: '服务管理', icon: Monitor },
-        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts },
-        { path: '/admin/alerts', label: '告警中心', icon: Bell },
-        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp },
+        { path: '/admin/services', label: '服务管理', icon: Monitor, visible: true },
+        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: true },
+        { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: true },
+        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: isOperator },
       ],
     },
     {
@@ -117,7 +118,7 @@ const navGroups = computed(() => {
       label: '知识库',
       visible: true,
       items: [
-        { path: '/admin/knowledge', label: '知识库', icon: Collection },
+        { path: '/admin/knowledge', label: '知识库', icon: Collection, visible: true },
       ],
     },
     {
@@ -125,9 +126,9 @@ const navGroups = computed(() => {
       label: '系统设置',
       visible: isAdmin,
       items: [
-        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound },
-        { path: '/admin/audit', label: '审计日志', icon: Document },
-        { path: '/admin/users', label: '用户管理', icon: UserIcon },
+        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound, visible: isAdmin },
+        { path: '/admin/audit', label: '审计日志', icon: Document, visible: isAdmin },
+        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: isAdmin },
       ],
     },
   ]

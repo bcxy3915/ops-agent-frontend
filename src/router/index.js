@@ -67,7 +67,7 @@ const routes = [
         path: "alert-rules",
         name: "AlertRules",
         component: () => import("@/views/admin/alerts/AlertRules.vue"),
-        meta: { title: "告警规则", requiresAuth: true },
+        meta: { title: "告警规则", requiresAuth: true, roles: ["ADMIN", "OPERATOR"] },
       },
       {
         path: "knowledge",
@@ -79,7 +79,7 @@ const routes = [
         path: "channels",
         name: "NotificationChannels",
         component: () => import("@/views/admin/alerts/NotificationChannels.vue"),
-        meta: { title: "通知渠道", requiresAuth: true },
+        meta: { title: "通知渠道", requiresAuth: true, roles: ["ADMIN"] },
       },
       {
         path: "audit",

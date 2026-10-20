@@ -11,6 +11,8 @@
         <span class="badge-dot"></span>
         deepseek-chat
       </div>
+      <!-- 告警铃铛：点击弹出待处理告警列表，点击条目再跳转告警详情 -->
+      <AlertBell v-if="authStore.isLoggedIn" />
       <div v-if="authStore.isLoggedIn" class="topbar-badge">
         多轮记忆 · {{ chatStore.messages.length }} 条
       </div>
@@ -75,7 +77,8 @@ import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
-import LoginDialog from '@/components/auth/LoginDialog.vue'   // ★ 关键：import
+import LoginDialog from '@/components/auth/LoginDialog.vue'
+import AlertBell from '@/components/common/AlertBell.vue'   // ★ 关键：import
 
 const chatStore = useChatStore()
 const authStore = useAuthStore()

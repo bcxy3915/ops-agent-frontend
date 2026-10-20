@@ -89,7 +89,7 @@
             </el-icon>
           </div>
 
-          <div class="home-card" @click="go('/admin/alert-rules')">
+          <div v-if="isOperator" class="home-card" @click="go('/admin/alert-rules')">
             <div class="hc-icon hc-slate">
               <el-icon>
                 <SetUp />
@@ -194,6 +194,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isAdmin = computed(() => authStore.role === 'ADMIN')
+const isOperator = computed(() => authStore.role === 'ADMIN' || authStore.role === 'OPERATOR')
 
 function go(path) {
   router.push(path)

@@ -5,7 +5,7 @@
       <h2>知识库 <span class="page-sub">内置 SOP · 企业私有文档 · 故障案例，统一管理并为诊断提供可溯源依据</span></h2>
       <div class="header-actions">
         <el-button @click="switchTab('retrieval')">检索测试</el-button>
-        <el-button type="primary" :icon="Plus" @click="openUpload">上传知识</el-button>
+        <el-button v-if="isOperator" type="primary" :icon="Plus" @click="openUpload">上传知识</el-button>
       </div>
     </header>
 
@@ -49,15 +49,19 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { getKnowledgeStats } from '@/api/knowledge'
+import { useAuthStore } from '@/stores/auth'
 import OverviewTab from './OverviewTab.vue'
 import DocumentsTab from './DocumentsTab.vue'
 import CasesTab from './CasesTab.vue'
 import RetrievalTab from './RetrievalTab.vue'
 import UploadDrawer from './UploadDrawer.vue'
 import '@/styles/knowledge.css'
+
+const authStore = useAuthStore()
+const isOperator = computed(() => authStore.role === 'ADMIN' || authStore.role === 'OPERATOR')
 
 const tabs = [
   { key: 'overview', label: '知识总览' },
