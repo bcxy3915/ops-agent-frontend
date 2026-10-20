@@ -46,55 +46,111 @@
       <!-- ========== 告警事件 ========== -->
       <div v-show="tab === 0">
         <div class="al-filter-row">
-          <el-input v-model="filters.keyword" placeholder="搜索服务 / 指标 / 规则" style="width: 220px" clearable
+          <el-input v-model="filters.keyword" placeholder="搜索服务 / 指标 / 规则" style="width: 200px" clearable
             @keyup.enter="loadEvents" @clear="loadEvents">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
-          <el-select v-model="filters.status" placeholder="全部状态" style="width: 140px" @change="loadEvents">
+          <el-select v-model="filters.status" placeholder="全部状态" style="width: 130px" @change="loadEvents">
             <el-option label="全部状态" value="" />
             <el-option label="待处理" value="FIRING" />
             <el-option label="静默" value="SILENCED" />
             <el-option label="已确认" value="ACKNOWLEDGED" />
             <el-option label="已恢复" value="RESOLVED" />
           </el-select>
-          <el-select v-model="filters.service" placeholder="全部服务" style="width: 150px" clearable @change="loadEvents">
+          <el-select v-model="filters.service" placeholder="全部服务" style="width: 140px" clearable @change="loadEvents">
             <el-option v-for="s in serviceOptions" :key="s" :label="s" :value="s" />
           </el-select>
+
+          <!-- ★ 规格 1.5：全部 / 未读 / 已读 筛选 -->
+          <div class="al-read-seg">
+            <button class="al-seg" :class="{ active: readFilter === 'all' }" @click="readFilter = 'all'">全部</button>
+            <button class="al-seg" :class="{ active: readFilter === 'unread' }" @click="readFilter = 'unread'">未读</button>
+            <button class="al-seg" :class="{ active: readFilter === 'read' }" @click="readFilter = 'read'">已读</button>
+          </div>
+
           <el-button @click="handleReset">重置</el-button>
         </div>
 
+        <!-- ★ 规格 2.7：批量操作悬浮栏（勾选后出现，RESOLVED 自动过滤） -->
+        <div v-if="selectedIds.length > 0" class="batch-bar">
+          <span>已选 <b>{{ selectedIds.length }}</b> 条</span>
+          <el-button v-if="canWrite" size="small" type="primary" :loading="batchLoading" @click="handleBatchAck">
+            批量确认（{{ batchAckCount }}）
+          </el-button>
+          <el-button v-if="canWrite" size="small" type="warning" :loading="batchLoading" @click="openBatchSilence">
+            批量静默（{{ batchSilenceCount }}）
+          </el-button>
+          <el-button size="small" @click="handleBatchRead">标记已读</el-button>
+          <el-button size="small" text @click="selectedRows = []">取消选择</el-button>
+        </div>
+
         <div class="kb-card">
-          <el-table v-loading="loadingEvents" :data="events" class="al-table" stripe>
-            <el-table-column label="告警" min-width="360">
+          <el-table v-loading="loadingEvents" :data="visibleEvents" class="al-table" stripe
+            :row-class-name="rowCls"
+            @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="42" />
+            <el-table-column label="告警" min-width="400">
               <template #default="{ row }">
                 <div class="al-row-main">
                   <span class="al-sev" :class="sevCls(row.status)"></span>
+                  <!-- ★ 规格 1.5：未读行首蓝色竖条（替代红点） -->
+                  <span v-if="row.read === false && isPending(row.status)" class="al-unread-bar" title="未读"></span>
                   <div class="al-t">
                     {{ row.ruleName || row.metric }}
                     <el-tag size="small" :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+                    <!-- ★ 规格 4.3：已升级橙色徽标 -->
+                    <el-tooltip v-if="row.escalationLevel > 0"
+                      :content="`已升级至 L${row.escalationLevel}（${relTime(row.escalatedAt)}）`" placement="top">
+                      <span class="al-escalated">已升级</span>
+                    </el-tooltip>
                     <el-tag v-if="diagOf(row.id)" size="small" type="success" effect="light" class="al-diag-tag">已诊断</el-tag>
                   </div>
                   <div class="al-d">
                     <span class="al-metric">{{ row.service }} · {{ row.metric }} {{ row.operator }} {{ row.threshold }}</span>
                     <span v-if="row.currentValue != null" class="al-cur">当前 {{ row.currentValue }}</span>
+                    <!-- ★ 规格 3.3：认领人 tag（蓝 @username / 灰 未认领） -->
+                    <span v-if="row.acknowledgedBy" class="al-owner-tag">@{{ row.acknowledgedBy }}</span>
+                    <span v-else-if="isPending(row.status)" class="al-owner-tag none">未认领</span>
                   </div>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="确认 / 恢复" width="130">
+            <el-table-column label="触发 / 恢复" width="150">
               <template #default="{ row }">
-                <span class="al-time">{{ fmtTime(row.resolvedAt || row.firedAt) }}</span>
+                <span class="al-time">{{ fmtTime(row.firedAt) }}</span>
+                <div v-if="row.status === 'RESOLVED' && row.resolvedAt" class="al-time al-resolved">
+                  恢复 {{ fmtTime(row.resolvedAt) }}
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="130" align="right">
+            <!-- ★ 规格 2.2：按钮按状态动态渲染 -->
+            <el-table-column label="操作" width="290" align="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="goDetail(row)">详情</el-button>
-                <el-button v-if="canWrite && ['FIRING', 'SILENCED'].includes(row.status)" link type="warning"
-                  @click="handleAck(row)">确认</el-button>
+                <template v-if="canWrite">
+                  <!-- FIRING / SILENCED：独立认领（规格 3.2，无 owner 时） -->
+                  <el-button v-if="!row.acknowledgedBy && isPending(row.status)" link type="primary"
+                    @click="handleClaim(row)">认领</el-button>
+                  <!-- 接管他人（规格 3.4：二次确认） -->
+                  <el-button v-if="row.acknowledgedBy && row.acknowledgedBy !== auth.username && row.status !== 'RESOLVED'"
+                    link type="primary" @click="handleTakeover(row)">接管</el-button>
+                  <!-- FIRING / SILENCED：确认告警（无二次确认，自动认领，规格 2.3） -->
+                  <el-button v-if="['FIRING', 'SILENCED'].includes(row.status)" link type="primary"
+                    @click="handleAck(row)">确认告警</el-button>
+                  <!-- ACK / SILENCED：标记恢复（二次确认 + 恢复备注，规格 2.4） -->
+                  <el-button v-if="['ACKNOWLEDGED', 'SILENCED'].includes(row.status)" link type="success"
+                    @click="openResolve(row)">标记恢复</el-button>
+                  <!-- FIRING / ACK：静默（规格 2.5） -->
+                  <el-button v-if="['FIRING', 'ACKNOWLEDGED'].includes(row.status)" link
+                    @click="openSilence(row)">静默</el-button>
+                  <!-- SILENCED：解除静默（规格 2.2） -->
+                  <el-button v-if="row.status === 'SILENCED'" link type="warning"
+                    @click="handleUnsilence(row)">解除静默</el-button>
+                </template>
               </template>
             </el-table-column>
           </el-table>
-          <el-empty v-if="!loadingEvents && events.length === 0" description="暂无告警事件" :image-size="80" />
+          <el-empty v-if="!loadingEvents && visibleEvents.length === 0" description="暂无告警事件" :image-size="80" />
         </div>
       </div>
 
@@ -154,6 +210,59 @@
           <div v-if="currentDiag.errorMessage" class="al-dd-err">{{ currentDiag.errorMessage }}</div>
         </div>
       </el-dialog>
+
+      <!-- ========== 标记恢复（规格 2.4：二次确认 + 恢复备注可选，绿色主按钮） ========== -->
+      <el-dialog v-model="resolveVisible" title="标记恢复" width="460px" destroy-on-close>
+        <div class="al-confirm-text">
+          将告警 <b>{{ resolveTarget ? (resolveTarget.ruleName || resolveTarget.metric) : '' }}</b> 标记为已恢复？
+          <span class="al-confirm-note">恢复为终态，此后告警不再进入待处理列表。</span>
+        </div>
+        <el-form label-width="80px" style="margin-top: 8px">
+          <el-form-item label="恢复备注">
+            <el-input v-model="resolveNote" type="textarea" :rows="3" maxlength="500" show-word-limit
+              placeholder="可选，记录恢复操作说明（如：问题已处理，指标已回稳）" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="resolveVisible = false">取消</el-button>
+          <el-button type="success" :loading="resolveLoading" @click="doResolve">确认恢复</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- ========== 静默弹窗（规格 2.5：原因枚举 + 预设时间 + 校验；单条 / 批量共用） ========== -->
+      <el-dialog v-model="silenceVisible" :title="silenceBatch ? '批量静默告警' : '静默告警'" width="500px" destroy-on-close>
+        <el-form label-width="90px">
+          <el-form-item label="静默原因" required>
+            <div class="al-reason-grid">
+              <button v-for="r in SILENCE_REASONS" :key="r.value" class="al-reason-item"
+                :class="{ active: silenceForm.reason === r.value }" @click="silenceForm.reason = r.value">
+                {{ r.label }}
+              </button>
+            </div>
+          </el-form-item>
+          <el-form-item label="到期时间" required>
+            <div class="al-until-row">
+              <button v-for="p in UNTIL_PRESETS" :key="p.value" class="al-until-item"
+                :class="{ active: silenceForm.untilType === p.value }" @click="pickUntil(p.value)">
+                {{ p.label }}
+              </button>
+            </div>
+            <el-date-picker v-if="silenceForm.untilType === 'custom'" v-model="silenceForm.untilCustom" type="datetime"
+              :disabled-date="disabledBeforeNowPlus15"
+              style="width: 100%; margin-top: 8px"
+              placeholder="选择静默恢复时间（需晚于当前 15 分钟）" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="silenceForm.note" type="textarea" :rows="2" maxlength="500" show-word-limit
+              placeholder="可选，静默备注" />
+          </el-form-item>
+          <div class="al-silence-hint">到期必须 &gt; 当前时间 15 分钟，最多 7 天；到期后若指标仍异常将自动回到原状态。</div>
+        </el-form>
+        <template #footer>
+          <el-button @click="silenceVisible = false">取消</el-button>
+          <el-button type="primary" :loading="silenceLoading" @click="doSilence">确定静默</el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -163,7 +272,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, SetUp, ChatDotRound } from '@element-plus/icons-vue'
-import { listAlertEvents, acknowledgeAlertEvent } from '@/api/alerts'
+import {
+  listAlertEvents, acknowledgeAlertEvent, claimAlertEvent, resolveAlertEvent,
+  silenceAlertEvent, unsilenceAlertEvent, batchAcknowledgeAlertEvents, markAllAlertEventsRead,
+} from '@/api/alerts'
 import { listDiagnoses } from '@/api/diagnosis'
 import { useAuthStore } from '@/stores/auth'
 
@@ -178,6 +290,14 @@ const events = ref([])
 const loadingEvents = ref(false)
 const filters = reactive({ keyword: '', status: '', service: '' })
 const serviceOptions = ref([])
+const readFilter = ref('all') // all / unread / read（规格 1.5）
+
+// ---- 批量选择 ----
+const selectedRows = ref([])
+const selectedIds = computed(() => selectedRows.value.map((r) => r.id))
+const batchLoading = ref(false)
+const batchAckCount = computed(() => selectedRows.value.filter((r) => r.status !== 'RESOLVED').length)
+const batchSilenceCount = computed(() => selectedRows.value.filter((r) => r.status !== 'RESOLVED').length)
 
 // ---- 诊断记录 ----
 const diagnoses = ref([])
@@ -186,12 +306,50 @@ const diagKeyword = ref('')
 const diagVisible = ref(false)
 const currentDiag = ref(null)
 
-// ---- 统计 ----
+// ---- 标记恢复（规格 2.4） ----
+const resolveVisible = ref(false)
+const resolveLoading = ref(false)
+const resolveTarget = ref(null)
+const resolveNote = ref('')
+
+// ---- 静默（规格 2.5） ----
+const SILENCE_REASONS = [
+  { value: 'PLANNED_MAINTENANCE', label: '计划维护' },
+  { value: 'KNOWN_ISSUE', label: '已知问题' },
+  { value: 'FALSE_POSITIVE', label: '误报' },
+  { value: 'OTHER', label: '其他' },
+]
+const UNTIL_PRESETS = [
+  { value: '15m', label: '15 分钟' },
+  { value: '30m', label: '30 分钟' },
+  { value: '1h', label: '1 小时' },
+  { value: '2h', label: '2 小时' },
+  { value: 'endOfDay', label: '今天结束' },
+  { value: 'custom', label: '自定义' },
+]
+const silenceVisible = ref(false)
+const silenceBatch = ref(false)
+const silenceLoading = ref(false)
+const silenceTarget = ref(null) // null=batch
+const silenceForm = reactive({ reason: '', untilType: '1h', untilCustom: null, note: '' })
+
+// ---- 统计（规格 1.2 口径：待处理 = FIRING/ACK/SILENCED） ----
 const stats = computed(() => {
-  const pending = events.value.filter((e) => e.status === 'FIRING' || e.status === 'SILENCED').length
+  const pending = events.value.filter((e) => ['FIRING', 'ACKNOWLEDGED', 'SILENCED'].includes(e.status)).length
   const today = events.value.filter((e) => isToday(e.firedAt)).length
   const diagSet = new Set(diagnoses.value.map((d) => d.alertEventId).filter(Boolean))
   return { pending, today, diag: diagSet.size, total: events.value.length }
+})
+
+// 未读 / 已读筛选后的列表
+const visibleEvents = computed(() => {
+  if (readFilter.value === 'unread') {
+    return events.value.filter((e) => e.read === false)
+  }
+  if (readFilter.value === 'read') {
+    return events.value.filter((e) => e.read === true)
+  }
+  return events.value
 })
 
 function isToday(t) {
@@ -199,6 +357,10 @@ function isToday(t) {
   const d = new Date(t)
   const now = new Date()
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+}
+
+function isPending(s) {
+  return s === 'FIRING' || s === 'ACKNOWLEDGED' || s === 'SILENCED'
 }
 
 // ---- 状态映射 ----
@@ -209,6 +371,12 @@ const SEV_CLS = { FIRING: 'sev-danger', SILENCED: 'sev-warning', ACKNOWLEDGED: '
 function statusLabel(s) { return STATUS_LABEL[s] || s || '-' }
 function statusTagType(s) { return STATUS_TAG[s] || 'info' }
 function sevCls(s) { return SEV_CLS[s] || 'sev-muted' }
+
+// 行 class（规格 1.5：未读蓝条 / 已读字色由 CSS 处理）
+function rowCls({ row }) {
+  if (row.read === false) return 'row-unread'
+  return 'row-read'
+}
 
 // ---- 置信度 ----
 function confColor(c) {
@@ -282,7 +450,13 @@ function handleReset() {
   filters.keyword = ''
   filters.status = ''
   filters.service = ''
+  readFilter.value = 'all'
   loadEvents()
+}
+
+// ---- 批量选择 ----
+function onSelectionChange(rows) {
+  selectedRows.value = rows
 }
 
 // ---- 操作 ----
@@ -290,16 +464,213 @@ function goDetail(row) {
   router.push(`/admin/alerts/${row.id}`)
 }
 
-async function handleAck(row) {
+// 独立认领（规格 3.2，无二次确认）
+async function handleClaim(row) {
   try {
-    await ElMessageBox.confirm(`确认告警"${row.ruleName || row.metric}"？确认后将记录处置人。`, '确认告警', {
-      type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消',
-    })
-    await acknowledgeAlertEvent(row.id)
-    ElMessage.success('已确认')
+    await claimAlertEvent(row.id)
+    ElMessage.success(`已认领告警，当前处置人 @${auth.username}`)
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '认领失败')
+  }
+}
+
+// 接管他人告警（规格 3.4：二次确认）
+async function handleTakeover(row) {
+  try {
+    await ElMessageBox.confirm(
+      `该告警当前由 @${row.acknowledgedBy} 认领。确认接管？`,
+      '接管告警',
+      { type: 'warning', confirmButtonText: '确认接管', cancelButtonText: '取消' }
+    )
+    await claimAlertEvent(row.id)
+    ElMessage.success(`已接管，当前处置人 @${auth.username}`)
     loadEvents()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
+  }
+}
+
+// 确认告警（规格 2.3：无二次确认，自动认领）
+async function handleAck(row) {
+  try {
+    await acknowledgeAlertEvent(row.id)
+    ElMessage.success(`已确认，处置人 @${auth.username}`)
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '确认失败')
+  }
+}
+
+// 标记恢复：打开弹窗（规格 2.4：二次确认 + 恢复备注）
+function openResolve(row) {
+  resolveTarget.value = row
+  resolveNote.value = ''
+  resolveVisible.value = true
+}
+
+async function doResolve() {
+  resolveLoading.value = true
+  try {
+    await resolveAlertEvent(resolveTarget.value.id, { resolutionNote: resolveNote.value.trim() || undefined })
+    ElMessage.success('已标记恢复')
+    resolveVisible.value = false
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '标记恢复失败')
+  } finally {
+    resolveLoading.value = false
+  }
+}
+
+// ---- 静默 ----
+function openSilence(row) {
+  silenceBatch.value = false
+  silenceTarget.value = row
+  resetSilenceForm()
+  silenceVisible.value = true
+}
+
+function openBatchSilence() {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先勾选告警')
+    return
+  }
+  silenceBatch.value = true
+  silenceTarget.value = null
+  resetSilenceForm()
+  silenceVisible.value = true
+}
+
+function resetSilenceForm() {
+  silenceForm.reason = ''
+  silenceForm.untilType = '1h'
+  silenceForm.untilCustom = null
+  silenceForm.note = ''
+}
+
+function pickUntil(type) {
+  silenceForm.untilType = type
+  if (type !== 'custom') silenceForm.untilCustom = null
+}
+
+function disabledBeforeNowPlus15(date) {
+  return date.getTime() < Date.now() + 15 * 60 * 1000
+}
+
+function computeUntil() {
+  const now = Date.now()
+  switch (silenceForm.untilType) {
+    case '15m': return new Date(now + 16 * 60 * 1000) // 规格要求 > now+15min，留 1 分钟缓冲
+    case '30m': return new Date(now + 30 * 60 * 1000)
+    case '1h': return new Date(now + 60 * 60 * 1000)
+    case '2h': return new Date(now + 2 * 60 * 60 * 1000)
+    case 'endOfDay': {
+      const d = new Date()
+      d.setHours(23, 59, 59, 0)
+      return d
+    }
+    default: return silenceForm.untilCustom
+  }
+}
+
+async function doSilence() {
+  if (!silenceForm.reason) {
+    ElMessage.warning('请选择静默原因')
+    return
+  }
+  const until = computeUntil()
+  if (!until) {
+    ElMessage.warning('请选择到期时间')
+    return
+  }
+  // 校验：必须 > now+15min，最多 7 天（规格 2.5）
+  const min = Date.now() + 15 * 60 * 1000
+  const max = Date.now() + 7 * 24 * 3600 * 1000
+  const untilTs = new Date(until).getTime()
+  if (untilTs <= min) {
+    ElMessage.warning('到期时间必须晚于当前时间 15 分钟')
+    return
+  }
+  if (untilTs > max) {
+    ElMessage.warning('静默最多 7 天，请缩短到期时间')
+    return
+  }
+  silenceLoading.value = true
+  try {
+    const payload = {
+      reason: silenceForm.reason,
+      silencedUntil: formatDateTime(until),
+      note: silenceForm.note.trim() || undefined,
+    }
+    if (silenceBatch.value) {
+      // 批量静默：逐条调用（后端提供单条接口）
+      for (const id of selectedIds.value) {
+        await silenceAlertEvent(id, payload)
+      }
+      ElMessage.success(`已静默 ${selectedIds.value.length} 条告警`)
+    } else if (silenceTarget.value) {
+      await silenceAlertEvent(silenceTarget.value.id, payload)
+      ElMessage.success('已静默，到期自动恢复')
+    }
+    silenceVisible.value = false
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '静默失败')
+  } finally {
+    silenceLoading.value = false
+  }
+}
+
+// 解除静默（规格 2.2）
+async function handleUnsilence(row) {
+  try {
+    await unsilenceAlertEvent(row.id)
+    ElMessage.success('已解除静默')
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '解除静默失败')
+  }
+}
+
+// ---- 批量操作 ----
+async function handleBatchAck() {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先勾选告警')
+    return
+  }
+  const ids = selectedRows.value.filter((r) => r.status !== 'RESOLVED').map((r) => r.id)
+  const skipped = selectedRows.value.length - ids.length
+  if (ids.length === 0) {
+    ElMessage.warning('所选告警均已恢复，无需确认')
+    return
+  }
+  try {
+    batchLoading.value = true
+    const res = await batchAcknowledgeAlertEvents(ids)
+    const ok = res && res.count != null ? res.count : ids.length
+    ElMessage.success(`已确认 ${ok} 条${skipped > 0 ? `，跳过已恢复 ${skipped} 条` : ''}`)
+    selectedRows.value = []
+    loadEvents()
+  } catch (e) {
+    if (e && e.message) ElMessage.error(e.message)
+  } finally {
+    batchLoading.value = false
+  }
+}
+
+async function handleBatchRead() {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先勾选告警')
+    return
+  }
+  try {
+    await markAllAlertEventsRead(selectedIds.value)
+    ElMessage.success('已标记已读')
+    selectedRows.value = []
+    loadEvents()
+  } catch (e) {
+    ElMessage.error(e.message || '标记已读失败')
   }
 }
 
@@ -310,6 +681,16 @@ function openDiag(d) {
     currentDiag.value = d
     diagVisible.value = true
   }
+}
+
+// ---- 相对时间 ----
+function relTime(t) {
+  if (!t) return ''
+  const diff = Date.now() - new Date(t).getTime()
+  if (diff < 60 * 1000) return '刚刚'
+  if (diff < 3600 * 1000) return `${Math.floor(diff / 60000)} 分钟前`
+  if (diff < 24 * 3600 * 1000) return `${Math.floor(diff / 3600000)} 小时前`
+  return `${Math.floor(diff / 86400000)} 天前`
 }
 
 // ---- 时间格式 ----
@@ -324,6 +705,10 @@ function fmtDay(t) {
   const d = new Date(t)
   const p = (n) => String(n).padStart(2, '0')
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+function formatDateTime(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 onMounted(() => {
@@ -444,6 +829,49 @@ onMounted(() => {
   align-items: center;
 }
 
+/* 全部 / 未读 / 已读（规格 1.5） */
+.al-read-seg {
+  display: inline-flex;
+  background: #EEF1F6;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+.al-seg {
+  border: none;
+  background: transparent;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.al-seg.active {
+  background: #fff;
+  color: var(--primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ============ 批量操作条 ============ */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.batch-bar b {
+  color: var(--primary);
+}
+
 /* ============ 告警事件表 ============ */
 .al-row-main {
   display: flex;
@@ -460,6 +888,17 @@ onMounted(() => {
   margin-top: 3px;
 }
 
+/* 未读行首蓝色竖条（规格 1.5，替代红点） */
+.al-unread-bar {
+  width: 4px;
+  height: 34px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  background: #1677FF;
+  box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.2);
+}
+
 .sev-danger { background: var(--danger); }
 .sev-warning { background: var(--warning); }
 .sev-muted { background: #CBD5E1; }
@@ -474,6 +913,18 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+/* 已升级橙色徽标（规格 4.3） */
+.al-escalated {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.14);
+  color: #D97706;
+  cursor: default;
+}
+
 .al-diag-tag {
   background: rgba(13, 148, 136, 0.1);
   color: var(--teal);
@@ -483,6 +934,10 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .al-metric {
@@ -495,10 +950,108 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* 认领人 tag（规格 3.3）：蓝 @username / 灰 未认领 */
+.al-owner-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563EB;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+}
+.al-owner-tag.none {
+  background: rgba(100, 116, 139, 0.08);
+  color: rgba(0, 0, 0, 0.3);
+  border: 1px dashed rgba(100, 116, 139, 0.25);
+}
+
 .al-time {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+.al-resolved {
+  margin-top: 2px;
+  color: var(--success);
+}
+
+.al-silence-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 4px 0 0;
+}
+
+/* 标记恢复确认 */
+.al-confirm-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.7;
+}
+.al-confirm-note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 静默原因枚举（规格 2.5） */
+.al-reason-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+.al-reason-item {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.al-reason-item:hover { border-color: rgba(37, 99, 235, 0.4); }
+.al-reason-item.active {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 静默预设时间 */
+.al-until-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.al-until-item {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.al-until-item:hover { border-color: rgba(37, 99, 235, 0.4); }
+.al-until-item.active {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ============ 已读 / 未读整行视觉（规格 1.5） ============ */
+:deep(.el-table .row-unread .al-t) { color: var(--text-primary); font-weight: 600; }
+:deep(.el-table .row-read .al-t) { color: rgba(0, 0, 0, 0.65); }
+:deep(.el-table .row-read .al-d),
+:deep(.el-table .row-read .al-metric),
+:deep(.el-table .row-read .al-time) { color: rgba(0, 0, 0, 0.5); }
 
 /* ============ 诊断记录 ============ */
 .al-diag-list {
@@ -557,74 +1110,45 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .al-conf-bar {
-  width: 54px;
-  height: 6px;
-  border-radius: 3px;
+  display: inline-block;
+  width: 60px;
+  height: 5px;
+  border-radius: 999px;
   background: #EEF1F6;
   overflow: hidden;
-  display: inline-block;
 }
 
-.al-conf-bar > i {
+.al-conf-bar i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 999px;
 }
 
 .al-diag-time {
   font-size: 12px;
   color: var(--text-muted);
-  width: 130px;
-  text-align: right;
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-/* ============ 诊断详情 dialog ============ */
+/* 诊断详情 */
+.al-diag-detail {
+  max-height: 60vh;
+  overflow-y: auto;
+}
 .al-dd-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 14px;
 }
-
-.al-dd-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-
+.al-dd-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .al-dd-block { margin-bottom: 14px; }
-
-.al-dd-lab {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.al-dd-text {
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--text-primary);
-}
-
-.al-dd-list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--text-secondary);
-}
-
-.al-dd-err {
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.08);
-  color: var(--danger);
-  font-size: 12.5px;
-}
+.al-dd-lab { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.al-dd-text { font-size: 13.5px; color: var(--text-primary); line-height: 1.7; }
+.al-dd-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-primary); line-height: 1.8; }
+.al-dd-err { margin-top: 10px; padding: 8px 12px; background: rgba(220, 38, 38, 0.08); border-radius: 6px; color: #DC2626; font-size: 12.5px; }
 </style>

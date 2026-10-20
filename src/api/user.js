@@ -37,3 +37,17 @@ export async function getUser(id) {
 export async function createUser(data) {
   return request.post("/users", data);
 }
+
+/**
+ * 更新用户（角色/启停/密码/手机/邮箱）
+ */
+export async function updateUser(id, data) {
+  return request.put(`/users/${id}`, data);
+}
+
+/**
+ * 删除用户
+ */
+export async function deleteUser(id) {
+  return request.delete(`/users/${id}`);
+}

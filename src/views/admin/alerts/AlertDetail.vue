@@ -17,6 +17,10 @@
               <h3 class="al-head-title">
                 {{ event.ruleName || event.metric }}
                 <el-tag size="small" :type="statusTagType(event.status)">{{ statusLabel(event.status) }}</el-tag>
+                <el-tooltip v-if="event.escalationLevel > 0"
+                  :content="`已升级至 L${event.escalationLevel}（${fmtTime(event.escalatedAt)}）`" placement="top">
+                  <span class="al-escalated">已升级</span>
+                </el-tooltip>
                 <el-tag v-if="diag" size="small" type="success" effect="light">AI 已诊断</el-tag>
               </h3>
               <div class="al-head-meta">
@@ -25,11 +29,37 @@
                 <span>告警 #{{ event.id }}</span>
                 <span>触发 {{ fmtTime(event.firedAt) }}</span>
               </div>
+              <!-- ★ 规格 3.3：认领人展示（蓝 @username / 灰 未认领） -->
+              <div class="al-head-owner">
+                <span v-if="event.acknowledgedBy" class="al-owner-tag">处置人 @{{ event.acknowledgedBy }}</span>
+                <span v-else class="al-owner-tag none">未认领</span>
+                <span v-if="event.acknowledgedAt" class="al-owner-time">{{ fmtTime(event.acknowledgedAt) }} 认领</span>
+              </div>
             </div>
             <div class="al-head-actions">
-              <el-button v-if="canWrite && ['FIRING', 'SILENCED'].includes(event.status)" type="warning"
-                @click="handleAck">确认告警</el-button>
-              <el-button type="primary" @click="goChat">带上下文去对话追问</el-button>
+              <!-- ★ 规格 2.2：按钮按状态动态渲染 -->
+              <template v-if="canWrite">
+                <!-- 独立认领 / 接管（规格 3.2 / 3.4） -->
+                <el-button v-if="!event.acknowledgedBy && ['FIRING', 'SILENCED'].includes(event.status)" type="primary" plain
+                  @click="handleClaim">认领</el-button>
+                <el-button v-if="event.acknowledgedBy && event.acknowledgedBy !== auth.username && event.status !== 'RESOLVED'"
+                  type="primary" plain @click="handleTakeover">接管</el-button>
+                <!-- FIRING / SILENCED：确认告警（无二次确认，自动认领，规格 2.3） -->
+                <el-button v-if="['FIRING', 'SILENCED'].includes(event.status)" type="primary"
+                  @click="handleAck">确认告警</el-button>
+                <!-- ACK / SILENCED：标记恢复（规格 2.4） -->
+                <el-button v-if="['ACKNOWLEDGED', 'SILENCED'].includes(event.status)" type="success"
+                  @click="openResolve">标记恢复</el-button>
+                <!-- FIRING / ACK：静默（规格 2.5） -->
+                <el-button v-if="['FIRING', 'ACKNOWLEDGED'].includes(event.status)"
+                  @click="openSilence">静默告警</el-button>
+                <!-- SILENCED：解除静默（规格 2.2） -->
+                <el-button v-if="event.status === 'SILENCED'" type="warning"
+                  @click="handleUnsilence">解除静默</el-button>
+              </template>
+              <!-- ★ 规格 1.6：打开详情不自动已读，提供手动标记已读 -->
+              <el-button v-if="event.read === false" type="info" plain @click="handleMarkRead">标记已读</el-button>
+              <el-button type="primary" plain @click="goChat">带上下文去对话追问</el-button>
             </div>
           </div>
 
@@ -53,6 +83,18 @@
             <div class="al-kv"><div class="k">阈值</div><div class="v">{{ event.operator }} {{ event.threshold }}</div></div>
             <div class="al-kv"><div class="k">当前值</div><div class="v" :class="{ bad: event.status === 'FIRING' }">{{ event.currentValue }}</div></div>
             <div class="al-kv"><div class="k">状态</div><div class="v">{{ statusLabel(event.status) }}</div></div>
+            <div class="al-kv"><div class="k">处置人（认领）</div>
+              <div class="v">{{ event.acknowledgedBy || '待认领' }}</div>
+            </div>
+            <div class="al-kv"><div class="k">静默到期</div>
+              <div class="v">{{ event.silencedUntil ? fmtTime(event.silencedUntil) : '-' }}</div>
+            </div>
+            <div class="al-kv"><div class="k">升级级别</div>
+              <div class="v">{{ event.escalationLevel > 0 ? 'L' + event.escalationLevel + (event.escalatedAt ? ' · ' + fmtTime(event.escalatedAt) : '') : '未升级' }}</div>
+            </div>
+            <div class="al-kv"><div class="k">恢复时间</div>
+              <div class="v">{{ event.resolvedAt ? fmtTime(event.resolvedAt) : '-' }}</div>
+            </div>
           </div>
         </div>
 
@@ -137,7 +179,7 @@
             </div>
           </div>
 
-          <!-- ========== 右列：通知 + 处置 + 沉淀 ========== -->
+          <!-- ========== 右列：通知 + 处置时间线 + 沉淀 ========== -->
           <div>
             <!-- 通知记录 -->
             <div class="kb-card" style="margin-bottom: 16px">
@@ -160,20 +202,78 @@
               </div>
             </div>
 
-            <!-- 处置与闭环 -->
+            <!-- ★ 规格 3.5：处置时间线完整闭环（触发/认领/确认/静默/解除/恢复/升级） -->
             <div class="kb-card" style="margin-bottom: 16px">
-              <div class="al-card-hd"><div class="al-card-title">处置与闭环</div></div>
+              <div class="al-card-hd"><div class="al-card-title">处置时间线</div></div>
               <div class="al-card-bd">
                 <div class="al-timeline">
+                  <!-- 触发 -->
                   <div class="al-tl-item">
                     <span class="al-tl-dot ok"></span>
-                    <div class="al-tl-t">{{ diag ? '已触发自动诊断' : '待触发诊断' }}</div>
-                    <div class="al-tl-d">{{ diag ? `生成根因/证据/建议（置信度 ${diag.confidence || 0}%）` : '确认告警后可由快照触发诊断' }}</div>
+                    <div class="al-tl-t">告警触发</div>
+                    <div class="al-tl-d">{{ event.ruleName || event.metric }} · {{ event.service }} 指标超阈值</div>
+                    <div class="al-tl-time">{{ fmtTime(event.firedAt) }}</div>
                   </div>
+                  <!-- AI 诊断 -->
+                  <div v-if="diag" class="al-tl-item">
+                    <span class="al-tl-dot ok"></span>
+                    <div class="al-tl-t">AI 自动诊断</div>
+                    <div class="al-tl-d">生成根因 / 证据 / 建议（置信度 {{ diag.confidence || 0 }}%）</div>
+                    <div class="al-tl-time">{{ fmtTime(diag.createdAt) }}</div>
+                  </div>
+                  <!-- 认领（独立认领或确认自动认领） -->
                   <div class="al-tl-item">
-                    <span class="al-tl-dot" :class="isAcked ? 'ok' : 'gray'"></span>
-                    <div class="al-tl-t">{{ isAcked ? '已确认告警' : '待确认告警 / 执行处置' }}</div>
-                    <div class="al-tl-d">确认后记录处置人；恢复后自动生成候选案例</div>
+                    <span class="al-tl-dot" :class="event.acknowledgedAt ? 'ok' : 'gray'"></span>
+                    <div class="al-tl-t">{{ event.acknowledgedAt ? '已认领' : '待认领' }}</div>
+                    <div class="al-tl-d">
+                      <template v-if="event.acknowledgedBy">由 <b>@{{ event.acknowledgedBy }}</b> 认领处置</template>
+                      <template v-else>确认告警或点击认领后记录处置人</template>
+                    </div>
+                    <div v-if="event.acknowledgedAt" class="al-tl-time">{{ fmtTime(event.acknowledgedAt) }}</div>
+                  </div>
+                  <!-- 确认 -->
+                  <div class="al-tl-item">
+                    <span class="al-tl-dot" :class="isAcked || event.status === 'RESOLVED' ? 'ok' : 'gray'"></span>
+                    <div class="al-tl-t">{{ isAcked || event.status === 'RESOLVED' ? '已确认' : '待确认' }}</div>
+                    <div class="al-tl-d">
+                      <template v-if="event.acknowledgedAt">确认时间见上（确认自动认领）</template>
+                      <template v-else>确认后开始处置计时</template>
+                    </div>
+                  </div>
+                  <!-- 静默 / 解除静默 -->
+                  <div v-if="event.silencedAt || event.status === 'SILENCED'" class="al-tl-item">
+                    <span class="al-tl-dot warn"></span>
+                    <div class="al-tl-t">已静默告警</div>
+                    <div class="al-tl-d">
+                      {{ event.silencedReason || '未填写原因' }}
+                      <template v-if="event.silencedNote"> · {{ event.silencedNote }}</template>
+                      <template v-if="event.silencedUntil"> · 到期 {{ fmtTime(event.silencedUntil) }}</template>
+                      <template v-if="event.silencedBy"> · 由 {{ event.silencedBy }} 操作</template>
+                    </div>
+                    <div v-if="event.silencedAt" class="al-tl-time">{{ fmtTime(event.silencedAt) }}</div>
+                  </div>
+                  <!-- 升级记录（规格 4.2：橙色箭头 + 文字说明） -->
+                  <template v-if="escalations.length">
+                    <div v-for="esc in escalations" :key="esc.id" class="al-tl-item">
+                      <span class="al-tl-dot warn"></span>
+                      <div class="al-tl-t">已升级（L{{ esc.level }}）</div>
+                      <div class="al-tl-d">
+                        {{ esc.reason || '长时间未确认处理，系统自动升级' }}
+                        <template v-if="esc.toRole"> · 通知角色 {{ esc.toRole }}</template>
+                        <template v-if="esc.toUsers"> · 通知 {{ esc.toUsers }}</template>
+                      </div>
+                      <div class="al-tl-time">{{ fmtTime(esc.triggeredAt) }}</div>
+                    </div>
+                  </template>
+                  <!-- 恢复 -->
+                  <div class="al-tl-item">
+                    <span class="al-tl-dot" :class="event.status === 'RESOLVED' ? 'ok' : 'gray'"></span>
+                    <div class="al-tl-t">{{ event.status === 'RESOLVED' ? '已恢复' : '待恢复' }}</div>
+                    <div class="al-tl-d">
+                      <template v-if="event.resolutionNote">{{ event.resolutionNote }}</template>
+                      <template v-else>恢复后生成候选案例沉淀知识库</template>
+                    </div>
+                    <div v-if="event.resolvedAt" class="al-tl-time">{{ fmtTime(event.resolvedAt) }}</div>
                   </div>
                 </div>
               </div>
@@ -201,6 +301,59 @@
             <el-button type="primary" :loading="followLoading" @click="handleFollowUp">追问</el-button>
           </template>
         </el-dialog>
+
+        <!-- ★ 规格 2.4：标记恢复（二次确认 + 恢复备注可选，绿色主按钮） -->
+        <el-dialog v-model="resolveVisible" title="标记恢复" width="460px" destroy-on-close>
+          <div class="al-confirm-text">
+            将告警 <b>{{ event.ruleName || event.metric }}</b> 标记为已恢复？
+            <span class="al-confirm-note">恢复为终态，此后告警不再进入待处理列表；若指标再次异常将重新触发。</span>
+          </div>
+          <el-form label-width="80px" style="margin-top: 8px">
+            <el-form-item label="恢复备注">
+              <el-input v-model="resolveNote" type="textarea" :rows="3" maxlength="500" show-word-limit
+                placeholder="可选，记录恢复操作说明" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="resolveVisible = false">取消</el-button>
+            <el-button type="success" :loading="resolveLoading" @click="doResolve">确认恢复</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- ★ 规格 2.5：静默弹窗（原因枚举 + 预设时间 + 校验） -->
+        <el-dialog v-model="silenceVisible" title="静默告警" width="500px" destroy-on-close>
+          <el-form label-width="90px">
+            <el-form-item label="静默原因" required>
+              <div class="al-reason-grid">
+                <button v-for="r in SILENCE_REASONS" :key="r.value" class="al-reason-item"
+                  :class="{ active: silenceForm.reason === r.value }" @click="silenceForm.reason = r.value">
+                  {{ r.label }}
+                </button>
+              </div>
+            </el-form-item>
+            <el-form-item label="到期时间" required>
+              <div class="al-until-row">
+                <button v-for="p in UNTIL_PRESETS" :key="p.value" class="al-until-item"
+                  :class="{ active: silenceForm.untilType === p.value }" @click="pickUntil(p.value)">
+                  {{ p.label }}
+                </button>
+              </div>
+              <el-date-picker v-if="silenceForm.untilType === 'custom'" v-model="silenceForm.untilCustom" type="datetime"
+                :disabled-date="disabledBeforeNowPlus15"
+                style="width: 100%; margin-top: 8px"
+                placeholder="选择静默恢复时间（需晚于当前 15 分钟）" />
+            </el-form-item>
+            <el-form-item label="备注">
+              <el-input v-model="silenceForm.note" type="textarea" :rows="2" maxlength="500" show-word-limit
+                placeholder="可选，静默备注" />
+            </el-form-item>
+            <div class="al-silence-hint">到期必须 &gt; 当前时间 15 分钟，最多 7 天；到期后若指标仍异常将自动回到原状态。</div>
+          </el-form>
+          <template #footer>
+            <el-button @click="silenceVisible = false">取消</el-button>
+            <el-button type="primary" :loading="silenceLoading" @click="doSilence">确定静默</el-button>
+          </template>
+        </el-dialog>
       </template>
 
       <el-empty v-else-if="!loading" description="告警不存在或已删除">
@@ -215,7 +368,10 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Cpu, Camera, InfoFilled, RefreshLeft } from '@element-plus/icons-vue'
-import { listAlertEvents, acknowledgeAlertEvent } from '@/api/alerts'
+import {
+  listAlertEvents, acknowledgeAlertEvent, claimAlertEvent, resolveAlertEvent,
+  silenceAlertEvent, unsilenceAlertEvent, markAlertEventRead, getAlertEscalations,
+} from '@/api/alerts'
 import { listDiagnoses, followUpDiagnosis, triggerDiagnosis } from '@/api/diagnosis'
 import { getFailureSnapshot, listFailureSnapshots } from '@/api/snapshot'
 import { listNotificationRecords } from '@/api/notifications'
@@ -234,10 +390,35 @@ const snapshot = ref(null)
 const snapshotData = ref(null)
 const snapshotJson = ref('')
 const records = ref([])
+const escalations = ref([])
 const diagLoading = ref(false)
 const followVisible = ref(false)
 const followQuestion = ref('')
 const followLoading = ref(false)
+
+// 标记恢复（规格 2.4）
+const resolveVisible = ref(false)
+const resolveLoading = ref(false)
+const resolveNote = ref('')
+
+// 静默（规格 2.5）
+const SILENCE_REASONS = [
+  { value: 'PLANNED_MAINTENANCE', label: '计划维护' },
+  { value: 'KNOWN_ISSUE', label: '已知问题' },
+  { value: 'FALSE_POSITIVE', label: '误报' },
+  { value: 'OTHER', label: '其他' },
+]
+const UNTIL_PRESETS = [
+  { value: '15m', label: '15 分钟' },
+  { value: '30m', label: '30 分钟' },
+  { value: '1h', label: '1 小时' },
+  { value: '2h', label: '2 小时' },
+  { value: 'endOfDay', label: '今天结束' },
+  { value: 'custom', label: '自定义' },
+]
+const silenceVisible = ref(false)
+const silenceLoading = ref(false)
+const silenceForm = ref({ reason: '', untilType: '1h', untilCustom: null, note: '' })
 
 const isAcked = computed(() => event.value && event.value.status === 'ACKNOWLEDGED')
 
@@ -295,6 +476,8 @@ async function load() {
     event.value = list.find((e) => String(e.id) === String(eventId)) || null
     if (!event.value) return
 
+    // ★ 规格 1.6：打开详情不自动标记已读（由用户手动操作）
+
     // 2. 诊断
     const diags = (await listDiagnoses({ alertEventId: Number(eventId), limit: 10 })) || []
     diag.value = diags.find((d) => d.status !== 'FAILED') || diags[0] || null
@@ -318,6 +501,11 @@ async function load() {
 
     // 4. 通知记录
     records.value = (await listNotificationRecords({ alertEventId: Number(eventId), limit: 20 })) || []
+
+    // 5. 升级记录（规格 4.2：处置时间线数据源）
+    try {
+      escalations.value = (await getAlertEscalations(event.value.id)) || []
+    } catch { escalations.value = [] }
   } catch (e) {
     ElMessage.error(e.message || '加载告警详情失败')
   } finally {
@@ -325,16 +513,156 @@ async function load() {
   }
 }
 
-async function handleAck() {
+// 独立认领（规格 3.2）
+async function handleClaim() {
   try {
-    await ElMessageBox.confirm('确认该告警？确认后将记录处置人。', '确认告警', {
-      type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消',
-    })
-    await acknowledgeAlertEvent(event.value.id)
-    ElMessage.success('已确认')
+    await claimAlertEvent(event.value.id)
+    ElMessage.success(`已认领告警，当前处置人 @${auth.username}`)
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '认领失败')
+  }
+}
+
+// 接管他人告警（规格 3.4：二次确认）
+async function handleTakeover() {
+  try {
+    await ElMessageBox.confirm(
+      `该告警当前由 @${event.value.acknowledgedBy} 认领。确认接管？`,
+      '接管告警',
+      { type: 'warning', confirmButtonText: '确认接管', cancelButtonText: '取消' }
+    )
+    await claimAlertEvent(event.value.id)
+    ElMessage.success(`已接管，当前处置人 @${auth.username}`)
     load()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
+  }
+}
+
+// 确认告警（规格 2.3：无二次确认，自动认领）
+async function handleAck() {
+  try {
+    await acknowledgeAlertEvent(event.value.id)
+    ElMessage.success(`已确认，处置人 @${auth.username}`)
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '确认失败')
+  }
+}
+
+// 标记恢复：弹窗（规格 2.4）
+function openResolve() {
+  resolveNote.value = ''
+  resolveVisible.value = true
+}
+
+async function doResolve() {
+  resolveLoading.value = true
+  try {
+    await resolveAlertEvent(event.value.id, { resolutionNote: resolveNote.value.trim() || undefined })
+    ElMessage.success('已标记恢复')
+    resolveVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '标记恢复失败')
+  } finally {
+    resolveLoading.value = false
+  }
+}
+
+// 标记已读（规格 1.6：详情不自动已读，手动标记）
+async function handleMarkRead() {
+  try {
+    await markAlertEventRead(event.value.id)
+    ElMessage.success('已标记已读')
+    event.value.read = true
+  } catch (e) {
+    ElMessage.error(e.message || '标记已读失败')
+  }
+}
+
+// 解除静默（规格 2.2）
+async function handleUnsilence() {
+  try {
+    await unsilenceAlertEvent(event.value.id)
+    ElMessage.success('已解除静默')
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '解除静默失败')
+  }
+}
+
+// ---- 静默 ----
+function openSilence() {
+  silenceForm.value = { reason: '', untilType: '1h', untilCustom: null, note: '' }
+  silenceVisible.value = true
+}
+
+function pickUntil(type) {
+  silenceForm.value.untilType = type
+  if (type !== 'custom') silenceForm.value.untilCustom = null
+}
+
+function disabledBeforeNowPlus15(date) {
+  return date.getTime() < Date.now() + 15 * 60 * 1000
+}
+
+function computeUntil() {
+  const now = Date.now()
+  const f = silenceForm.value
+  switch (f.untilType) {
+    case '15m': return new Date(now + 16 * 60 * 1000) // 规格要求 > now+15min，留 1 分钟缓冲
+    case '30m': return new Date(now + 30 * 60 * 1000)
+    case '1h': return new Date(now + 60 * 60 * 1000)
+    case '2h': return new Date(now + 2 * 60 * 60 * 1000)
+    case 'endOfDay': {
+      const d = new Date()
+      d.setHours(23, 59, 59, 0)
+      return d
+    }
+    default: return f.untilCustom
+  }
+}
+
+async function doSilence() {
+  const f = silenceForm.value
+  if (!f.reason) {
+    ElMessage.warning('请选择静默原因')
+    return
+  }
+  const until = computeUntil()
+  if (!until) {
+    ElMessage.warning('请选择到期时间')
+    return
+  }
+  // 校验：必须 > now+15min，最多 7 天（规格 2.5）
+  const min = Date.now() + 15 * 60 * 1000
+  const max = Date.now() + 7 * 24 * 3600 * 1000
+  const untilTs = new Date(until).getTime()
+  if (untilTs <= min) {
+    ElMessage.warning('到期时间必须晚于当前时间 15 分钟')
+    return
+  }
+  if (untilTs > max) {
+    ElMessage.warning('静默最多 7 天，请缩短到期时间')
+    return
+  }
+  silenceLoading.value = true
+  try {
+    const payload = {
+      reason: f.reason,
+      silencedUntil: formatDateTime(until),
+      note: f.note.trim() || undefined,
+    }
+    await silenceAlertEvent(event.value.id, payload)
+    ElMessage.success('已静默，到期自动恢复')
+    silenceVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '静默失败')
+  } finally {
+    silenceLoading.value = false
   }
 }
 
@@ -381,6 +709,11 @@ function fmtTime(t) {
   const d = new Date(t)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function formatDateTime(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 onMounted(load)
@@ -433,10 +766,50 @@ onMounted(load)
   color: var(--text-muted);
 }
 
+/* 认领人展示（规格 3.3） */
+.al-head-owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.al-owner-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563EB;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+.al-owner-tag.none {
+  background: rgba(100, 116, 139, 0.08);
+  color: rgba(0, 0, 0, 0.3);
+  border: 1px dashed rgba(100, 116, 139, 0.25);
+}
+.al-owner-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 已升级徽标（规格 4.3） */
+.al-escalated {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.14);
+  color: #D97706;
+  cursor: default;
+}
+
 .al-head-actions {
   display: flex;
   gap: 10px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 /* ============ 链路 ============ */
@@ -587,60 +960,32 @@ onMounted(load)
 
 .al-diag-note {
   font-size: 12.5px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
-.al-block { margin-bottom: 14px; }
-
-.al-lab {
-  font-size: 12px;
-  font-weight: 600;
   color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.al-text {
-  font-size: 13.5px;
   line-height: 1.7;
-  color: var(--text-primary);
 }
 
-.al-list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--text-secondary);
-}
-
-.al-err {
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.08);
-  color: var(--danger);
-  font-size: 12.5px;
-  margin-bottom: 12px;
-}
+.al-block { margin-top: 12px; }
+.al-lab { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.al-text { font-size: 13.5px; color: var(--text-primary); line-height: 1.7; }
+.al-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-primary); line-height: 1.8; }
+.al-err { margin-top: 10px; padding: 8px 12px; background: rgba(220, 38, 38, 0.08); border-radius: 6px; color: #DC2626; font-size: 12.5px; }
 
 .al-tip {
   display: flex;
+  gap: 8px;
   align-items: flex-start;
-  gap: 6px;
+  margin-top: 14px;
   padding: 10px 12px;
+  background: #F0F7FF;
   border-radius: 8px;
-  background: rgba(30, 64, 175, 0.05);
-  border: 1px solid rgba(30, 64, 175, 0.1);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.6;
-  margin-top: 6px;
 }
 
 .al-card-actions {
   display: flex;
   gap: 10px;
-  justify-content: flex-end;
   margin-top: 14px;
 }
 
@@ -649,102 +994,106 @@ onMounted(load)
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
-  margin-bottom: 10px;
 }
 
 .al-snap-item {
   background: #F8FAFC;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 10px 12px;
+  min-width: 0;
 }
 
 .al-snap-item .k {
   font-size: 11px;
   color: var(--text-muted);
-  margin-bottom: 2px;
-  word-break: break-all;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .al-snap-item .v {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  font-family: ui-monospace, monospace;
   word-break: break-all;
+  max-height: 60px;
+  overflow: hidden;
 }
 
-.al-snap-json summary {
-  cursor: pointer;
+.al-snap-json {
+  margin-top: 14px;
   font-size: 12.5px;
-  color: var(--primary);
-  margin-bottom: 8px;
+  color: var(--text-muted);
 }
 
 .al-snap-json pre {
-  background: #0F172A;
-  color: #E2E8F0;
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 12px;
+  max-height: 240px;
   overflow: auto;
-  max-height: 220px;
-  font-family: ui-monospace, monospace;
+  background: #F8FAFC;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
   line-height: 1.6;
+  margin: 8px 0 0;
 }
 
 /* ============ 时间线 ============ */
 .al-timeline {
   position: relative;
+  padding-left: 6px;
 }
 
 .al-tl-item {
   position: relative;
-  padding: 0 0 14px 20px;
+  padding: 0 0 18px 22px;
 }
+
+.al-tl-item:last-child { padding-bottom: 0; }
 
 .al-tl-item::before {
   content: '';
   position: absolute;
-  left: 5px;
-  top: 12px;
-  bottom: 0;
-  width: 1px;
-  background: #E2E8F0;
+  left: 4px;
+  top: 6px;
+  bottom: -2px;
+  width: 2px;
+  background: #E5EAF1;
 }
 
-.al-tl-item:last-child { padding-bottom: 0; }
 .al-tl-item:last-child::before { display: none; }
 
 .al-tl-dot {
   position: absolute;
   left: 0;
-  top: 4px;
-  width: 11px;
-  height: 11px;
+  top: 3px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  background: #CBD5E1;
 }
 
-.al-tl-dot.ok { background: #10B981; }
-.al-tl-dot.warn { background: var(--warning); }
+.al-tl-dot.ok { background: var(--success); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12); }
+.al-tl-dot.warn { background: var(--warning); box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14); }
 .al-tl-dot.fail { background: var(--danger); }
 .al-tl-dot.gray { background: #CBD5E1; }
 
 .al-tl-t {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .al-tl-d {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-muted);
   margin-top: 2px;
+  line-height: 1.6;
 }
 
 .al-tl-time {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
 }
@@ -752,8 +1101,75 @@ onMounted(load)
 /* ============ 案例沉淀 ============ */
 .al-case-desc {
   font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+
+/* ============ 弹窗通用 ============ */
+.al-confirm-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.7;
+}
+.al-confirm-note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.al-reason-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+.al-reason-item {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
   color: var(--text-secondary);
-  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.al-reason-item:hover { border-color: rgba(37, 99, 235, 0.4); }
+.al-reason-item.active {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.al-until-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.al-until-item {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.al-until-item:hover { border-color: rgba(37, 99, 235, 0.4); }
+.al-until-item.active {
+  border-color: var(--primary);
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.al-silence-hint {
+  font-size: 12px;
+  color: var(--text-muted);
   line-height: 1.6;
+  padding: 4px 0 0;
 }
 </style>

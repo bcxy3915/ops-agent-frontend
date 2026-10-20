@@ -4,7 +4,7 @@
     <div class="page-header">
       <div class="page-header-left">
         <h2 class="page-title">告警规则</h2>
-        <span class="page-subtitle">阈值触发、通知节流与渠道绑定</span>
+        <span class="page-subtitle">阈值触发、通知节流、升级策略与渠道绑定</span>
       </div>
       <div class="page-header-actions">
         <el-button v-if="canWrite" type="primary" :icon="Plus" @click="openCreate">新建规则</el-button>
@@ -44,12 +44,28 @@
               <div class="rule-meta" v-if="row.compareMode && row.compareMode !== 'THRESHOLD'">{{ row.compareMode }}</div>
             </template>
           </el-table-column>
+          <!-- ★ P0 规格 4：升级策略（多级路径） -->
+          <el-table-column label="升级策略" width="220">
+            <template #default="{ row }">
+              <template v-if="row.escalationEnabled && row.escalationLevels && row.escalationLevels.length">
+                <el-tooltip :content="escalationTooltip(row)" placement="top" :show-after="150">
+                  <div class="rule-escalation">
+                    <span v-for="(lv, i) in row.escalationLevels" :key="i" class="rule-esc-item">
+                      <b>L{{ i + 1 }}</b> {{ fmtDur(lv.afterSeconds) }}→{{ roleLabel(lv.toRole) || lv.toUsers.join('/') }}
+                    </span>
+                  </div>
+                </el-tooltip>
+              </template>
+              <el-tag v-else-if="row.escalationEnabled" size="small" type="warning" effect="light">已开启（未配置级别）</el-tag>
+              <span v-else class="rule-meta">未开启</span>
+            </template>
+          </el-table-column>
           <el-table-column label="服务" width="140">
             <template #default="{ row }">
               <span class="rule-sec">{{ row.service || '全部服务' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="通知渠道" width="130">
+          <el-table-column label="通知渠道" width="120">
             <template #default="{ row }">
               <span class="rule-sec" title="规则触发后按已启用的通知渠道发送">默认渠道</span>
             </template>
@@ -72,12 +88,12 @@
 
       <div class="rule-tip">
         <el-icon><InfoFilled /></el-icon>
-        规则触发后自动抓快照、发通知并调用 LLM 诊断；同一规则在节流窗口内不重复告警，避免告警风暴。
+        规则触发后自动抓快照、发通知并调用 LLM 诊断；同一规则在节流窗口内不重复告警。开启升级策略后，未确认 / 未恢复告警将按多级路径逐级升级提醒（规格 4）。
       </div>
     </div>
 
     <!-- ========== 新建 / 编辑 dialog ========== -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑告警规则' : '新建告警规则'" width="600px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑告警规则' : '新建告警规则'" width="680px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="110px">
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="form.name" placeholder="如：5xx-错误率告警" />
@@ -111,6 +127,64 @@
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
         </el-form-item>
+
+        <!-- ★ P0 规格 4：升级策略（多级路径编辑器） -->
+        <el-divider content-position="left">升级策略（未确认 / 未恢复自动升级）</el-divider>
+        <el-form-item label="开启升级">
+          <el-switch v-model="form.escalationEnabled" />
+          <span class="rule-form-hint">默认开启：告警触发后长时间无人处置，自动按级别逐级升级提醒（规格 4 核心决策 4）</span>
+        </el-form-item>
+
+        <template v-if="form.escalationEnabled">
+          <!-- 升级级别列表 -->
+          <el-form-item label="升级路径">
+            <div class="esc-levels">
+              <div v-for="(lv, idx) in form.escalationLevels" :key="idx" class="esc-level-card">
+                <div class="esc-level-hd">
+                  <span class="esc-level-no">Level {{ idx + 1 }}</span>
+                  <span class="esc-level-note">触发后第 {{ idx + 1 }} 级升级</span>
+                  <el-button v-if="form.escalationLevels.length > 1" link type="danger" :icon="Delete"
+                    @click="removeLevel(idx)">删除</el-button>
+                </div>
+                <div class="esc-level-row">
+                  <div class="esc-field">
+                    <div class="esc-lab">after 时间</div>
+                    <el-select v-model="lv.afterMinutes" style="width: 100%">
+                      <el-option v-for="m in AFTER_PRESETS" :key="m" :label="m + ' 分钟'" :value="m" />
+                      <el-option :value="lv.afterMinutes" v-if="lv.afterMinutes && !AFTER_PRESETS.includes(lv.afterMinutes)"
+                        :label="lv.afterMinutes + ' 分钟'" />
+                    </el-select>
+                  </div>
+                  <div class="esc-field">
+                    <div class="esc-lab">触发条件</div>
+                    <el-select v-model="lv.triggerOn" style="width: 100%">
+                      <el-option label="未确认（UNACKNOWLEDGED）" value="UNACKNOWLEDGED" />
+                      <el-option label="未恢复（UNRESOLVED）" value="UNRESOLVED" />
+                    </el-select>
+                  </div>
+                  <div class="esc-field">
+                    <div class="esc-lab">通知角色</div>
+                    <el-select v-model="lv.toRole" style="width: 100%" clearable placeholder="选择角色（与用户二选一）">
+                      <el-option label="OPERATOR（值班）" value="OPERATOR" />
+                      <el-option label="ADMIN（管理员）" value="ADMIN" />
+                    </el-select>
+                  </div>
+                  <div class="esc-field esc-field-users">
+                    <div class="esc-lab">通知用户（可选）</div>
+                    <el-select v-model="lv.toUsers" multiple filterable style="width: 100%" placeholder="可多选具体用户">
+                      <el-option v-for="u in userOptions" :key="u.username" :label="u.displayName ? `${u.displayName}（${u.username}）` : u.username"
+                        :value="u.username" />
+                    </el-select>
+                  </div>
+                </div>
+              </div>
+              <el-button class="esc-add" :icon="Plus" @click="addLevel">新增升级级别</el-button>
+              <div class="esc-tip">
+                级别按 after 时间严格递增（1 分钟 ~ 24 小时）；系统每 30 秒扫描一次，满足条件自动升级并记录时间线（规格 4.4）。
+              </div>
+            </div>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -123,10 +197,11 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, InfoFilled } from '@element-plus/icons-vue'
+import { Plus, Search, InfoFilled, Delete } from '@element-plus/icons-vue'
 import {
   listAlertRules, createAlertRule, updateAlertRule, setAlertRuleEnabled, deleteAlertRule,
 } from '@/api/alerts'
+import { listUsers } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -136,6 +211,18 @@ const loading = ref(false)
 const rows = ref([])
 const filters = reactive({ keyword: '', service: '', enabled: '' })
 const serviceOptions = ref([])
+
+// 用户列表（升级通知目标，规格 4.1 toUsers）
+const userOptions = ref([])
+async function loadUsers() {
+  try {
+    userOptions.value = (await listUsers({})) || []
+  } catch {
+    userOptions.value = []
+  }
+}
+
+const AFTER_PRESETS = [1, 2, 3, 5, 10, 15, 30, 60]
 
 async function loadRules() {
   loading.value = true
@@ -172,6 +259,7 @@ function ruleMeta(row) {
 }
 
 function fmtDur(sec) {
+  if (sec == null) return '-'
   if (sec % 60 === 0) return `${sec / 60} 分钟`
   return `${sec} 秒`
 }
@@ -180,6 +268,19 @@ function opLabel(op) {
   if (op === 'gt') return '>'
   if (op === 'lt') return '<'
   return op || '-'
+}
+
+function roleLabel(role) {
+  if (role === 'OPERATOR') return 'OPERATOR'
+  if (role === 'ADMIN') return 'ADMIN'
+  return role || ''
+}
+
+function escalationTooltip(row) {
+  const lines = (row.escalationLevels || []).map((lv, i) =>
+    `L${i + 1}：触发后 ${fmtDur(lv.afterSeconds)} · ${lv.triggerOn === 'UNRESOLVED' ? '未恢复' : '未确认'} → ${roleLabel(lv.toRole) || '指定用户'}${lv.toUsers && lv.toUsers.length ? ` + ${lv.toUsers.join(',')}` : ''}`
+  )
+  return `升级路径：\n${lines.join('\n')}`
 }
 
 function handleReset() {
@@ -205,9 +306,18 @@ const editingId = ref(null)
 const saving = ref(false)
 const formRef = ref()
 
+// 规格 4 默认路径：L1 5m→OPERATOR（未确认），L2 15m→ADMIN（未确认）
+function defaultLevels() {
+  return [
+    { afterMinutes: 5, afterSeconds: 300, triggerOn: 'UNACKNOWLEDGED', toRole: 'OPERATOR', toUsers: [] },
+    { afterMinutes: 15, afterSeconds: 900, triggerOn: 'UNACKNOWLEDGED', toRole: 'ADMIN', toUsers: [] },
+  ]
+}
+
 const emptyForm = () => ({
   name: '', description: '', service: '', metric: '', operator: 'gt',
   threshold: null, durationSeconds: 60, silenceSeconds: 0, enabled: true,
+  escalationEnabled: true, escalationLevels: defaultLevels(),
 })
 const form = reactive(emptyForm())
 
@@ -230,13 +340,66 @@ function openCreate() {
 
 function openEdit(row) {
   editingId.value = row.id
+  const levels = (row.escalationLevels || []).map((lv) => ({
+    afterMinutes: Math.max(1, Math.round((lv.afterSeconds || 300) / 60)),
+    afterSeconds: lv.afterSeconds || 300,
+    triggerOn: lv.triggerOn || 'UNACKNOWLEDGED',
+    toRole: lv.toRole || null,
+    toUsers: lv.toUsers || [],
+  }))
   resetForm({
     name: row.name, description: row.description || '', service: row.service || '',
     metric: row.metric, operator: row.operator || 'gt', threshold: row.threshold,
     durationSeconds: row.durationSeconds ?? 60, silenceSeconds: row.silenceSeconds ?? 0,
     enabled: row.enabled !== false,
+    escalationEnabled: row.escalationEnabled !== false,
+    escalationLevels: levels.length ? levels : defaultLevels(),
   })
   dialogVisible.value = true
+}
+
+function addLevel() {
+  const prev = form.escalationLevels[form.escalationLevels.length - 1]
+  const nextMin = prev ? Math.min(prev.afterMinutes + 5, 24 * 60) : 5
+  form.escalationLevels.push({
+    afterMinutes: nextMin,
+    afterSeconds: nextMin * 60,
+    triggerOn: 'UNACKNOWLEDGED',
+    toRole: form.escalationLevels.length >= 2 ? null : 'OPERATOR',
+    toUsers: [],
+  })
+}
+
+function removeLevel(idx) {
+  form.escalationLevels.splice(idx, 1)
+}
+
+// 规格 4.1 校验：至少 1 级、after 1m~24h 严格递增、toRole/toUsers 至少一个
+function validateEscalation() {
+  const levels = form.escalationLevels
+  if (levels.length === 0) {
+    ElMessage.warning('升级路径至少需要 1 个级别')
+    return false
+  }
+  let prev = 0
+  for (let i = 0; i < levels.length; i++) {
+    const lv = levels[i]
+    const sec = Math.max(60, Math.min((lv.afterMinutes || 0) * 60, 24 * 3600))
+    if (sec <= prev) {
+      ElMessage.warning(`Level ${i + 1} 的 after 时间必须大于上一级（严格递增）`)
+      return false
+    }
+    prev = sec
+    if (!lv.triggerOn) {
+      ElMessage.warning(`请选择 Level ${i + 1} 的触发条件`)
+      return false
+    }
+    if (!lv.toRole && (!lv.toUsers || lv.toUsers.length === 0)) {
+      ElMessage.warning(`Level ${i + 1} 需要至少选择一个通知角色或用户`)
+      return false
+    }
+  }
+  return true
 }
 
 async function handleSave() {
@@ -245,13 +408,25 @@ async function handleSave() {
   } catch {
     return
   }
+  if (form.escalationEnabled && !validateEscalation()) return
   saving.value = true
   try {
+    const levels = form.escalationEnabled
+      ? form.escalationLevels.map((lv) => ({
+          afterSeconds: Math.max(60, Math.min((lv.afterMinutes || 0) * 60, 24 * 3600)),
+          triggerOn: lv.triggerOn,
+          toRole: lv.toRole || null,
+          toUsers: lv.toUsers || [],
+          channelIds: [],
+        }))
+      : []
     const payload = {
       name: form.name, description: form.description, service: form.service || null,
       metric: form.metric, operator: form.operator, threshold: form.threshold,
       compareMode: 'THRESHOLD', durationSeconds: form.durationSeconds,
       silenceSeconds: form.silenceSeconds, enabled: form.enabled,
+      escalationEnabled: form.escalationEnabled,
+      escalationLevels: levels,
     }
     if (editingId.value) {
       await updateAlertRule(editingId.value, payload)
@@ -282,7 +457,10 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(loadRules)
+onMounted(() => {
+  loadRules()
+  loadUsers()
+})
 </script>
 
 <style scoped>
@@ -345,6 +523,31 @@ onMounted(loadRules)
   color: var(--text-secondary);
 }
 
+/* 升级策略展示（规格 4） */
+.rule-escalation {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rule-esc-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rule-esc-item b {
+  display: inline-block;
+  font-size: 11px;
+  color: #B45309;
+  background: rgba(217, 119, 6, 0.12);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 3px;
+}
+
 .rule-tip {
   display: flex;
   align-items: flex-start;
@@ -365,5 +568,62 @@ onMounted(loadRules)
   color: var(--text-muted);
   line-height: 1.4;
   margin-top: 4px;
+}
+
+/* 多级升级编辑器 */
+.esc-levels {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.esc-level-card {
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #FAFBFC;
+}
+
+.esc-level-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.esc-level-no {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary);
+}
+
+.esc-level-note {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.esc-level-row {
+  display: grid;
+  grid-template-columns: 130px 190px 170px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.esc-field .esc-lab {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.esc-add {
+  width: 100%;
+  border-style: dashed;
+}
+
+.esc-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 </style>

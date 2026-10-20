@@ -1,11 +1,11 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { listAlertEvents } from "@/api/alerts";
+import { listAlertEvents, getUnreadAlertCount, markAllAlertEventsRead } from "@/api/alerts";
 
 /**
- * 告警铃铛数据源
- * - pendingCount：待处理告警数（FIRING / SILENCED），用于铃铛红点
- * - recentList：最近待处理告警（默认 5 条），用于 popover 列表
+ * 告警铃铛数据源（P0：已读持久化）
+ * - pendingCount：当前用户未读告警数（后端 /unread-count，口径 FIRING/ACK/SILENCED 且未读，规格 1.2）
+ * - recentList：最近待处理告警（默认 20 条），用于 popover 列表
  * - 轮询：页面可见时 30s 一次；不可见时停止（由 AlertBell 组件驱动）
  */
 export const useAlertStore = defineStore("alert", () => {
@@ -16,7 +16,7 @@ export const useAlertStore = defineStore("alert", () => {
 
   const hasPending = computed(() => pendingCount.value > 0);
 
-  /** 拉取待处理告警（FIRING + SILENCED，按触发时间倒序取前 20） */
+  /** 拉取待处理告警（FIRING/ACK/SILENCED，按触发时间倒序取前 20）+ 未读数 */
   async function fetchPending() {
     // 距上次请求 <3s 直接跳过，避免 popover 打开瞬间重复请求
     const now = Date.now();
@@ -25,18 +25,24 @@ export const useAlertStore = defineStore("alert", () => {
 
     loading.value = true;
     try {
-      const res = await listAlertEvents({ limit: 50 });
-      const list = (res || []).filter(
-        (e) => e.status === "FIRING" || e.status === "SILENCED"
+      const list = (await listAlertEvents({ limit: 50 })) || [];
+      const pending = list.filter(
+        (e) =>
+          e.status === "FIRING" ||
+          e.status === "ACKNOWLEDGED" ||
+          e.status === "SILENCED"
       );
       // 按触发时间倒序
-      list.sort((a, b) => {
+      pending.sort((a, b) => {
         const ta = new Date(a.firedAt || 0).getTime();
         const tb = new Date(b.firedAt || 0).getTime();
         return tb - ta;
       });
-      recentList.value = list.slice(0, 20);
-      pendingCount.value = list.length;
+      recentList.value = pending.slice(0, 20);
+
+      // 未读数走后端持久化已读集合计算
+      const unread = await getUnreadAlertCount();
+      pendingCount.value = (unread && unread.count) || 0;
     } catch (e) {
       // 轮询失败静默，保持旧数据，避免弹错误打扰
     } finally {
@@ -44,10 +50,10 @@ export const useAlertStore = defineStore("alert", () => {
     }
   }
 
-  /** 标记全部已读（清空红点与列表） */
-  function markAllRead() {
+  /** 标记全部已读（调后端持久化，刷新后保持已读） */
+  async function markAllRead() {
+    await markAllAlertEventsRead([]);
     pendingCount.value = 0;
-    recentList.value = [];
   }
 
   return {

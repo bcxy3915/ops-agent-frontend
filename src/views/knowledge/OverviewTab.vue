@@ -1,5 +1,7 @@
 <template>
   <div class="kb-overview">
+    <!-- ★ P0 规格 6.3：重建索引 loading 顶部进度条 -->
+    <div v-if="rebuilding" class="kb-rebuild-bar"><i></i><span>正在重建向量索引，预计 3-5 分钟，期间检索可能变慢…</span></div>
     <!-- 统计卡 -->
     <div class="kb-stat-row">
       <div class="kb-card kb-stat">
@@ -29,7 +31,12 @@
       <div class="kb-card">
         <div class="kb-card-hd">
           <div class="kb-card-title">三层知识体系</div>
-          <button v-if="canWrite" class="kb-btn kb-btn-sm" @click="$emit('open-upload')">＋ 上传知识</button>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <button v-if="auth.isAdmin" class="kb-btn kb-btn-sm" :disabled="rebuilding" @click="handleRebuild">
+              {{ rebuilding ? '重建中…' : '重建索引' }}
+            </button>
+            <button v-if="canWrite" class="kb-btn kb-btn-sm" :disabled="rebuilding" @click="$emit('open-upload')">＋ 上传知识</button>
+          </div>
         </div>
         <div class="kb-card-bd">
           <div class="kb-layer">
@@ -182,10 +189,10 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getKnowledgeStats, getKnowledgeCoverage, getKnowledgeTodos, getKnowledgeHealth,
-  listKnowledgeDocuments, resolveKnowledgeConflict
+  listKnowledgeDocuments, resolveKnowledgeConflict, reloadKnowledgeBase
 } from '@/api/knowledge'
 import { useAuthStore } from '@/stores/auth'
 import { fmtNumber, formatDay } from './kb-utils'
@@ -197,6 +204,29 @@ const emit = defineEmits(['switch-tab', 'open-upload'])
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.isOperator)
+const rebuilding = ref(false)
+
+// ---- 重建索引 ----
+async function handleRebuild() {
+  try {
+    await ElMessageBox.confirm(
+      '重建将清空现有向量索引并重新解析、向量化全部知识文档，预计耗时 3-5 分钟。期间知识检索与 AI 诊断引用可能变慢，正在审核中的文档不受影响。确定开始重建？',
+      '重建索引',
+      { type: 'warning', confirmButtonText: '开始重建', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  rebuilding.value = true
+  try {
+    await reloadKnowledgeBase()
+    ElMessage.success('✅ 索引重建完成，知识库已重新生效')
+  } catch (e) {
+    ElMessage.error(e.message || '❌ 索引重建失败，请稍后重试')
+  } finally {
+    rebuilding.value = false
+  }
+}
 
 const stats = reactive({
   totalDocs: 0, pendingDocs: 0, expiredDocs: 0, zeroHitDocs: 0, orphanDocs: 0,
@@ -297,3 +327,47 @@ watch(() => props.tick, () => {
   loadLayerCounts()
 })
 </script>
+
+<style scoped>
+.kb-rebuild-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(30, 64, 175, 0.06);
+  border: 1px solid rgba(30, 64, 175, 0.12);
+  color: var(--primary);
+  font-size: 12.5px;
+  overflow: hidden;
+  position: relative;
+}
+.kb-rebuild-bar i {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(37, 99, 235, 0.25);
+  border-top-color: var(--primary);
+  animation: kb-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.kb-rebuild-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--primary), #60A5FA);
+  transform-origin: left;
+  animation: kb-fill 3s ease-in-out infinite;
+}
+@keyframes kb-spin { to { transform: rotate(360deg); } }
+@keyframes kb-fill {
+  0% { transform: scaleX(0); }
+  60% { transform: scaleX(0.75); }
+  100% { transform: scaleX(1); }
+}
+</style>
