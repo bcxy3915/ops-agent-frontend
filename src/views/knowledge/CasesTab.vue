@@ -142,6 +142,12 @@
     <!-- 修正根因 -->
     <el-dialog v-model="reviseVisible" title="编辑 / 修正根因" width="640px" destroy-on-close>
       <el-form :model="reviseForm" label-width="110px">
+        <el-form-item label="标题（只读）">
+          <el-input :model-value="reviseForm.title" disabled />
+        </el-form-item>
+        <el-form-item label="现象（只读）">
+          <el-input :model-value="reviseForm.symptom" type="textarea" :rows="2" disabled />
+        </el-form-item>
         <el-form-item label="真实根因">
           <el-input v-model="reviseForm.realRootCause" type="textarea" :rows="3" maxlength="2000" placeholder="不填写则沿用 AI 推断根因" />
         </el-form-item>
@@ -312,9 +318,11 @@ async function viewDetail(card) {
 // ---- 修正 ----
 const reviseVisible = ref(false)
 const saving = ref(false)
-const reviseForm = reactive({ id: null, realRootCause: '', effectiveAction: '', maskedStatus: 'NONE' })
+const reviseForm = reactive({ id: null, title: '', symptom: '', realRootCause: '', effectiveAction: '', maskedStatus: 'NONE' })
 function openRevise(card) {
   reviseForm.id = card.id
+  reviseForm.title = card.title || ''
+  reviseForm.symptom = card.symptom || ''
   reviseForm.realRootCause = card.realRootCause || card.rootCause || ''
   reviseForm.effectiveAction = card.effectiveAction || ''
   reviseForm.maskedStatus = card.maskedStatus || 'NONE'

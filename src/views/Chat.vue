@@ -24,6 +24,21 @@
       </el-button>
     </header>
 
+    <!-- 告警上下文卡：从 /chat?ref=alert:{id}&context=...&q=... 进入时渲染 -->
+    <div v-if="alertCtx.id" class="alert-context-card">
+      <div class="acc-icon">
+        <el-icon><Bell /></el-icon>
+      </div>
+      <div class="acc-main">
+        <div class="acc-title">正在基于告警追问 · 已附带告警上下文</div>
+        <div class="acc-sub">告警 #{{ alertCtx.id }}，对话将结合该告警的详情、诊断结果进行回答</div>
+      </div>
+      <div class="acc-actions">
+        <el-button size="small" @click="viewAlertDetail">查看详情</el-button>
+        <el-button size="small" text type="info" @click="exitAlertContext">退出上下文</el-button>
+      </div>
+    </div>
+
     <!-- 消息区 -->
     <div ref="messagesRef" class="messages">
       <!-- 空状态：欢迎页 -->
@@ -70,9 +85,9 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Delete, InfoFilled } from '@element-plus/icons-vue'
+import { ref, nextTick, watch, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Delete, InfoFilled, Bell } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/chat/ChatMessage.vue'
@@ -83,6 +98,7 @@ import AlertBell from '@/components/common/AlertBell.vue'   // ★ 关键：impo
 const chatStore = useChatStore()
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const messagesRef = ref(null)
 const chatInputRef = ref(null)          // ★ 输入框引用
@@ -103,6 +119,38 @@ const quickQuestions = [
 
 function goToLogin() {
   router.push('/login')
+}
+
+// ============ P1：告警上下文（/chat?ref=alert:{id}&context=...&q=...） ============
+const alertCtx = computed(() => {
+  const ref = route.query.ref || ''
+  const m = String(ref).match(/^alert:(\d+)$/)
+  if (!m) return { id: null, context: '', q: '' }
+  return {
+    id: m[1],
+    context: String(route.query.context || '').slice(0, 800),
+    q: String(route.query.q || ''),
+  }
+})
+
+// 进入对话时：若带 q 且当前无消息，自动发送（附带告警上下文）
+onMounted(() => {
+  const ctx = alertCtx.value
+  if (ctx.id && ctx.q && chatStore.messages.length === 0) {
+    const question = ctx.context
+      ? `${ctx.q}\n\n【附带的告警上下文】\n${ctx.context}`
+      : ctx.q
+    handleSend(question)
+  }
+})
+
+function viewAlertDetail() {
+  if (alertCtx.value.id) router.push(`/admin/alerts/${alertCtx.value.id}`)
+}
+
+// 退出上下文：仅移除 query，保留已发对话
+function exitAlertContext() {
+  router.replace({ query: {} })
 }
 
 // ★ 发送消息：先检查登录
@@ -176,6 +224,62 @@ watch(
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* 告警上下文卡（浅橙色） */
+.alert-context-card {
+  max-width: 820px;
+  margin: 14px auto 0;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(255, 244, 229, 0.95), rgba(255, 237, 213, 0.9));
+  border: 1px solid rgba(251, 146, 60, 0.35);
+  border-radius: 12px;
+  padding: 12px 16px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.acc-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(251, 146, 60, 0.16);
+  color: var(--warning, #d97706);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.acc-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.acc-sub {
+  font-size: 12px;
+  color: #b45309;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acc-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 /* 顶部栏 */

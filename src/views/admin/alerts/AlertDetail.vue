@@ -135,6 +135,35 @@
                       <li v-for="(s, i) in diag.suggestions" :key="i">{{ s }}</li>
                     </ol>
                   </div>
+
+                  <!-- P1 规格 4：来源溯源（参考知识 / 历史案例） -->
+                  <div class="al-block">
+                    <div class="al-lab">
+                      参考知识
+                      <span v-if="diag.references && diag.references.length" class="al-ref-count">{{ diag.references.length }} 条</span>
+                    </div>
+                    <div v-if="diag.references && diag.references.length" class="al-refs">
+                      <div v-for="(r, i) in diag.references" :key="i" class="al-ref-item">
+                        <div class="al-ref-top">
+                          <span class="al-ref-type" :class="refTypeCls(r.refType)">{{ refTypeLabel(r.refType) }}</span>
+                          <span class="al-ref-title">{{ r.title }}</span>
+                          <span v-if="r.section" class="al-ref-section">#{{ r.section }}</span>
+                          <span class="al-ref-score">{{ refScore(r.score) }}</span>
+                        </div>
+                        <div v-if="r.snippet" class="al-ref-snippet">{{ r.snippet }}</div>
+                        <div class="al-ref-meta">
+                          <span v-if="r.layer">层级：{{ layerLabel(r.layer) }}</span>
+                          <span v-if="r.version">版本：{{ r.version }}</span>
+                          <span v-if="r.author">作者：{{ r.author }}</span>
+                          <span v-if="r.refType === 'CASE' && r.citedCount != null">被引用 {{ r.citedCount }} 次</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="al-ref-empty">
+                      <el-icon><WarningFilled /></el-icon>
+                      <span>知识缺口：本次诊断未命中知识库文档或历史案例，可在知识库补充运维文档后重新诊断。</span>
+                    </div>
+                  </div>
                   <div v-if="diag.errorMessage" class="al-err">{{ diag.errorMessage }}</div>
 
                   <div class="al-tip">
@@ -142,8 +171,27 @@
                     诊断摘要与建议由 LLM 结合实时快照与知识库生成，关键结论可溯源，处置前请结合现场确认。
                   </div>
 
+                  <!-- P1 规格 3.1：内嵌追问区 -->
+                  <div class="al-followup">
+                    <div class="al-lab">继续追问 AI</div>
+                    <div v-if="followUps.length" class="al-followup-list">
+                      <div v-for="(fu, i) in followUps" :key="i" class="al-fu-item">
+                        <div class="al-fu-q">Q：{{ fu.question }}</div>
+                        <div v-if="fu.answer" class="al-fu-a">{{ fu.answer }}</div>
+                        <div v-if="fu.errorMessage" class="al-fu-err">{{ fu.errorMessage }}</div>
+                      </div>
+                    </div>
+                    <div class="al-followup-input">
+                      <el-input v-model="followQuestion" type="textarea" :rows="2" maxlength="500"
+                        placeholder="例如：结合快照里活跃线程打满的现象，进一步分析扩容后还有哪些风险？" />
+                      <div class="al-followup-actions">
+                        <span class="al-followup-hint">追问基于当前诊断与快照上下文</span>
+                        <el-button type="primary" :loading="followLoading" @click="handleFollowUp">追问</el-button>
+                      </div>
+                    </div>
+                  </div>
                   <div class="al-card-actions">
-                    <el-button @click="followVisible = true">基于此告警继续追问</el-button>
+                    <el-button type="primary" plain @click="goChat">带着上下文去对话</el-button>
                     <el-button v-if="canWrite && ['FIRING', 'SILENCED'].includes(event.status)" type="primary"
                       @click="handleAck">采纳并确认告警</el-button>
                   </div>
@@ -293,16 +341,7 @@
           </div>
         </div>
 
-        <!-- 追问 dialog -->
-        <el-dialog v-model="followVisible" title="继续追问 AI 诊断" width="560px" destroy-on-close>
-          <el-input v-model="followQuestion" type="textarea" :rows="4" placeholder="例如：结合快照里活跃线程打满的现象，进一步分析扩容后还有哪些风险？" />
-          <template #footer>
-            <el-button @click="followVisible = false">取消</el-button>
-            <el-button type="primary" :loading="followLoading" @click="handleFollowUp">追问</el-button>
-          </template>
-        </el-dialog>
-
-        <!-- ★ 规格 2.4：标记恢复（二次确认 + 恢复备注可选，绿色主按钮） -->
+                <!-- ★ 规格 2.4：标记恢复（二次确认 + 恢复备注可选，绿色主按钮） -->
         <el-dialog v-model="resolveVisible" title="标记恢复" width="460px" destroy-on-close>
           <div class="al-confirm-text">
             将告警 <b>{{ event.ruleName || event.metric }}</b> 标记为已恢复？
@@ -367,7 +406,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Cpu, Camera, InfoFilled, RefreshLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Cpu, Camera, InfoFilled, RefreshLeft, WarningFilled } from '@element-plus/icons-vue'
 import {
   listAlertEvents, acknowledgeAlertEvent, claimAlertEvent, resolveAlertEvent,
   silenceAlertEvent, unsilenceAlertEvent, markAlertEventRead, getAlertEscalations,
@@ -395,6 +434,7 @@ const diagLoading = ref(false)
 const followVisible = ref(false)
 const followQuestion = ref('')
 const followLoading = ref(false)
+const followUps = ref([])
 
 // 标记恢复（规格 2.4）
 const resolveVisible = ref(false)
@@ -440,6 +480,17 @@ function confCls(c) {
   return 'conf-low'
 }
 
+// P1 规格 4：参考知识辅助
+const REF_TYPE_LABEL = { BASE_DOC: '内置文档', KNOWLEDGE_DOC: '知识文档', CASE: '历史案例' }
+const LAYER_LABEL = { BUILTIN: '内置', PRIVATE: '私有', CASE: '案例' }
+function refTypeLabel(t) { return REF_TYPE_LABEL[t] || t || '知识' }
+function refTypeCls(t) { return `ref-${(t || 'doc').toLowerCase()}` }
+function layerLabel(l) { return LAYER_LABEL[l] || l || '-' }
+function refScore(s) {
+  if (s == null) return ''
+  return `${Math.round(s * 100)}%`
+}
+
 // ---- 通知记录状态 ----
 const REC_LABEL = { SUCCESS: '已送达', FAILED: '失败', RETRYING: '重试中', PENDING: '待发送', SENT: '已送达' }
 function recLabel(s) { return REC_LABEL[s] || s || '-' }
@@ -480,7 +531,9 @@ async function load() {
 
     // 2. 诊断
     const diags = (await listDiagnoses({ alertEventId: Number(eventId), limit: 10 })) || []
-    diag.value = diags.find((d) => d.status !== 'FAILED') || diags[0] || null
+    diag.value = diags.find((d) => d.status !== 'FAILED' && !d.question) || diags.find((d) => d.status !== 'FAILED') || diags[0] || null
+    // P1 规格 3.1：追问记录（question 非空），按时间正序展示
+    followUps.value = diags.filter((d) => d.question && d.answer).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
 
     // 3. 快照：优先用诊断关联，其次按告警事件查
     let snap = null
@@ -690,7 +743,6 @@ async function handleFollowUp() {
   try {
     await followUpDiagnosis(diag.value.id, q)
     ElMessage.success('追问完成')
-    followVisible.value = false
     followQuestion.value = ''
     load()
   } catch (e) {
@@ -700,8 +752,29 @@ async function handleFollowUp() {
   }
 }
 
+// P1 规格 3.2：带上下文跳 /chat
+function buildAlertContext() {
+  if (!event.value) return ''
+  const parts = []
+  parts.push(`告警 #${event.value.id}（${event.value.ruleName || event.value.metric}）`)
+  parts.push(`服务 ${event.value.service} · 指标 ${event.value.metric} · 触发 ${fmtTime(event.value.firedAt)}`)
+  if (diag.value && diag.value.rootCause) parts.push(`AI 诊断根因：${diag.value.rootCause}`)
+  if (diag.value && diag.value.summary) parts.push(`诊断摘要：${diag.value.summary}`)
+  if (diag.value && diag.value.suggestions && diag.value.suggestions.length) {
+    parts.push(`建议处置：${diag.value.suggestions.slice(0, 3).join('；')}`)
+  }
+  let ctx = parts.join('\n')
+  if (ctx.length > 800) ctx = ctx.slice(0, 800)
+  return ctx
+}
+
 function goChat() {
-  router.push('/chat')
+  const ctx = buildAlertContext()
+  const query = { ref: `alert:${event.value.id}`, context: ctx }
+  if (diag.value && diag.value.rootCause) {
+    query.q = `这个告警的根因是「${diag.value.rootCause}」，结合上下文继续分析处置建议？`
+  }
+  router.push({ path: '/chat', query })
 }
 
 function fmtTime(t) {
@@ -1172,4 +1245,139 @@ onMounted(load)
   line-height: 1.6;
   padding: 4px 0 0;
 }
+
+/* ============ P1 参考知识（规格 4） ============ */
+.al-ref-count {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+.al-refs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.al-ref-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.al-ref-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.al-ref-type {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #E0F2FE;
+  color: #0369A1;
+}
+.al-ref-type.ref-knowledge_doc {
+  background: #FEF3C7;
+  color: #B45309;
+}
+.al-ref-type.ref-case {
+  background: #FCE7F3;
+  color: #BE185D;
+}
+.al-ref-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.al-ref-section {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+}
+.al-ref-score {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal);
+}
+.al-ref-snippet {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.al-ref-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.al-ref-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(241, 245, 249, 0.4);
+}
+
+/* ============ P1 内嵌追问（规格 3.1） ============ */
+.al-followup {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.al-followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.al-fu-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(241, 245, 249, 0.5);
+}
+.al-fu-q {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.al-fu-a {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.al-fu-err {
+  font-size: 12px;
+  color: var(--danger);
+}
+.al-followup-input {
+  margin-top: 8px;
+}
+.al-followup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.al-followup-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 </style>

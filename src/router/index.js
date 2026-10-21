@@ -64,6 +64,12 @@ const routes = [
         meta: { title: "告警详情", requiresAuth: true },
       },
       {
+        path: "oncall",
+        name: "OncallManage",
+        component: () => import("@/views/admin/oncall/OncallManage.vue"),
+        meta: { title: "值班管理", requiresAuth: true, roles: ["ADMIN", "OPERATOR"] },
+      },
+      {
         path: "alert-rules",
         name: "AlertRules",
         component: () => import("@/views/admin/alerts/AlertRules.vue"),

@@ -13,23 +13,35 @@
     </div>
 
     <div class="page-body">
-      <!-- ========== 统计卡 ========== -->
+      <!-- ========== 统计卡（P1：接 /alerts/events/summary，单卡失败显示 "—" 可重试） ========== -->
       <div class="alert-summary">
         <div class="stat-card">
-          <div class="k">待处理告警</div>
-          <div class="v" style="color: var(--danger)">{{ stats.pending }}</div>
+          <div class="stat-card-head">
+            <div class="k">待处理告警</div>
+            <el-button v-if="summaryErr" link size="small" title="重试" @click="loadSummary"><el-icon><Refresh /></el-icon></el-button>
+          </div>
+          <div class="v" style="color: var(--danger)">{{ summaryVal(summary?.openCount) }}</div>
         </div>
         <div class="stat-card">
-          <div class="k">今日已触发</div>
-          <div class="v">{{ stats.today }}</div>
+          <div class="stat-card-head">
+            <div class="k">今日已触发</div>
+            <el-button v-if="summaryErr" link size="small" title="重试" @click="loadSummary"><el-icon><Refresh /></el-icon></el-button>
+          </div>
+          <div class="v">{{ summaryVal(summary?.todayCount) }}</div>
         </div>
         <div class="stat-card">
-          <div class="k">已 AI 诊断</div>
-          <div class="v" style="color: var(--teal)">{{ stats.diag }}<small>条</small></div>
+          <div class="stat-card-head">
+            <div class="k">已 AI 诊断</div>
+            <el-button v-if="summaryErr" link size="small" title="重试" @click="loadSummary"><el-icon><Refresh /></el-icon></el-button>
+          </div>
+          <div class="v" style="color: var(--teal)">{{ summaryVal(summary?.diagnosedCount) }}<small v-if="summary">条</small></div>
         </div>
         <div class="stat-card">
-          <div class="k">告警总数</div>
-          <div class="v">{{ stats.total }}</div>
+          <div class="stat-card-head">
+            <div class="k">平均诊断耗时</div>
+            <el-button v-if="summaryErr" link size="small" title="重试" @click="loadSummary"><el-icon><Refresh /></el-icon></el-button>
+          </div>
+          <div class="v">{{ summaryVal(summary?.avgDiagnoseMs != null ? fmtMs(summary.avgDiagnoseMs) : null) }}</div>
         </div>
       </div>
 
@@ -271,10 +283,11 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, SetUp, ChatDotRound } from '@element-plus/icons-vue'
+import { Search, SetUp, ChatDotRound, Refresh } from '@element-plus/icons-vue'
 import {
   listAlertEvents, acknowledgeAlertEvent, claimAlertEvent, resolveAlertEvent,
   silenceAlertEvent, unsilenceAlertEvent, batchAcknowledgeAlertEvents, markAllAlertEventsRead,
+  getAlertSummary, batchSilenceAlertEvents,
 } from '@/api/alerts'
 import { listDiagnoses } from '@/api/diagnosis'
 import { useAuthStore } from '@/stores/auth'
@@ -332,6 +345,29 @@ const silenceBatch = ref(false)
 const silenceLoading = ref(false)
 const silenceTarget = ref(null) // null=batch
 const silenceForm = reactive({ reason: '', untilType: '1h', untilCustom: null, note: '' })
+
+// ---- P1 汇总（GET /alerts/events/summary，单卡失败显示 "—" 可重试） ----
+const summary = ref(null)
+const summaryErr = ref(false)
+async function loadSummary() {
+  summaryErr.value = false
+  try {
+    summary.value = await getAlertSummary()
+  } catch (e) {
+    summaryErr.value = true
+    summary.value = null
+  }
+}
+function summaryVal(v) {
+  if (summaryErr.value) return '—'
+  if (v === null || v === undefined) return '—'
+  return v
+}
+function fmtMs(ms) {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(1)} s`
+}
 
 // ---- 统计（规格 1.2 口径：待处理 = FIRING/ACK/SILENCED） ----
 const stats = computed(() => {
@@ -604,11 +640,11 @@ async function doSilence() {
       note: silenceForm.note.trim() || undefined,
     }
     if (silenceBatch.value) {
-      // 批量静默：逐条调用（后端提供单条接口）
-      for (const id of selectedIds.value) {
-        await silenceAlertEvent(id, payload)
-      }
-      ElMessage.success(`已静默 ${selectedIds.value.length} 条告警`)
+      // P1：批量静默走后端一次性接口，返回 { count, skipped }（已恢复等自动跳过）
+      const res = await batchSilenceAlertEvents(selectedIds.value, payload)
+      const ok = res && res.count != null ? res.count : selectedIds.value.length
+      const skipped = res && res.skipped != null ? res.skipped : 0
+      ElMessage.success(`已静默 ${ok} 条告警${skipped > 0 ? `，跳过 ${skipped} 条（已恢复等）` : ''}`)
     } else if (silenceTarget.value) {
       await silenceAlertEvent(silenceTarget.value.id, payload)
       ElMessage.success('已静默，到期自动恢复')
@@ -714,6 +750,7 @@ function formatDateTime(d) {
 onMounted(() => {
   loadEvents()
   loadDiagnoses()
+  loadSummary()
 })
 </script>
 
@@ -757,6 +794,12 @@ onMounted(() => {
   border: 1px solid rgba(226, 232, 240, 0.8);
   border-radius: 12px;
   padding: 16px 18px;
+}
+
+.stat-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .stat-card .k {

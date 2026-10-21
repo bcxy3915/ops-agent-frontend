@@ -87,7 +87,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, MoreFilled, User, SwitchButton,
   Monitor, TrendCharts, Bell, SetUp, Collection, Document, User as UserIcon,
-  ChatDotRound
+  ChatDotRound, UserFilled
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -110,6 +110,7 @@ const navGroups = computed(() => {
         { path: '/admin/services', label: '服务管理', icon: Monitor, visible: true },
         { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: true },
         { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: true },
+        { path: '/admin/oncall', label: '值班管理', icon: UserFilled, visible: isOperator },
         { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: isOperator },
       ],
     },

@@ -5,6 +5,7 @@
             <div class="card-title">
                 <span class="service-name">{{ service.name }}</span>
                 <StatusBadge :status="service.status" />
+                <span v-if="service.inMaintenance" class="maint-tag" title="当前处于维护窗口内，告警将静默处理">维护中</span>
             </div>
 
             <el-dropdown trigger="click" @command="handleCommand">
@@ -249,5 +250,18 @@ function handleCommand(cmd) {
 .env-prod {
     background: #FCE7F3;
     color: #BE185D;
+}
+
+/* P1：维护中 tag */
+.maint-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: ui-monospace, monospace;
+    background: #FFEDD5;
+    color: #C2410C;
+    border: 1px solid #FDBA74;
 }
 </style>

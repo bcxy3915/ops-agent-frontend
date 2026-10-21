@@ -87,3 +87,14 @@ export function unsilenceAlertEvent(id) {
 export function getAlertEscalations(id) {
   return request.get(`/alerts/events/${id}/escalations`);
 }
+
+// ============ P1 新增：告警汇总 + 批量静默 ============
+/** 告警汇总统计（首页统计卡 / 告警中心页顶部汇总卡共用） */
+export function getAlertSummary() {
+  return request.get("/alerts/events/summary");
+}
+
+/** 批量静默告警（P1：一次调用后端批量处理，返回 { count, skipped }，跳过已恢复等不可静默项） */
+export function batchSilenceAlertEvents(ids, data) {
+  return request.post("/alerts/events/batch-silence", { ids, ...data });
+}

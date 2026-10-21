@@ -16,6 +16,9 @@
           <el-option label="DOWN" value="DOWN" />
           <el-option label="UNKNOWN" value="UNKNOWN" />
         </el-select>
+        <el-button v-if="canWrite" :icon="Tools" @click="openMaintenance">
+          维护窗口
+        </el-button>
         <el-button type="primary" :icon="Plus" v-if="canWrite" @click="handleRegister">
           注册服务
         </el-button>
@@ -40,15 +43,66 @@
 
     <!-- 注册/编辑弹窗 -->
     <ServiceFormDialog v-model="dialogVisible" :service="editingService" @success="handleFormSuccess" />
+
+    <!-- P1 维护窗口弹窗 -->
+    <el-dialog v-model="maintVisible" title="维护窗口" width="680px" destroy-on-close>
+      <div class="maint-section">
+        <div class="maint-title">新建维护窗口</div>
+        <div class="maint-form">
+          <el-form label-width="90px">
+            <el-form-item label="服务" required>
+              <el-select v-model="maintForm.services" multiple filterable placeholder="选择一个或多个服务" style="width: 100%">
+                <el-option v-for="s in services" :key="s.name" :label="s.name" :value="s.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="原因" required>
+              <el-input v-model="maintForm.reason" maxlength="256" placeholder="例如：数据库版本升级" />
+            </el-form-item>
+            <el-form-item label="到期时间" required>
+              <el-date-picker v-model="maintForm.until" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss"
+                placeholder="维护截止时间（必须晚于当前 15 分钟）"
+                :disabled-date="disabledBeforeNowPlus15" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="备注">
+              <el-input v-model="maintForm.note" maxlength="500" placeholder="可选" />
+            </el-form-item>
+          </el-form>
+          <div class="maint-actions">
+            <el-button type="primary" :loading="maintCreating" @click="createMaintenance">创建</el-button>
+          </div>
+        </div>
+      </div>
+
+      <div class="maint-section">
+        <div class="maint-title">当前生效窗口</div>
+        <div v-loading="maintLoading" class="maint-list">
+          <el-empty v-if="!maintLoading && activeWindows.length === 0" description="暂无维护窗口" :image-size="60" />
+          <div v-for="w in activeWindows" :key="w.id" class="maint-item">
+            <div class="maint-item-main">
+              <span class="maint-item-service">{{ w.service }}</span>
+              <span class="maint-item-reason">{{ w.reason }}</span>
+            </div>
+            <div class="maint-item-meta">
+              <span v-if="w.until">至 {{ fmtUntil(w.until) }}</span>
+              <span v-if="w.createdBy"> · {{ w.createdBy }}</span>
+            </div>
+            <el-button size="small" type="danger" plain :loading="w._ending" @click="endMaintenance(w)">
+              提前结束
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { Search, Plus } from '@element-plus/icons-vue'
+import { Search, Plus, Tools } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ServiceCard from '@/components/service/ServiceCard.vue'
 import ServiceFormDialog from '@/components/service/ServiceFormDialog.vue'
+import { listMaintenanceWindows, createMaintenanceWindow, endMaintenanceWindow } from '@/api/maintenance'
 import {
   listServices,
   registerService,
@@ -105,10 +159,22 @@ async function loadServices() {
     }
 
     services.value = result
+    markMaintenanceStatus()
   } catch (error) {
     ElMessage.error(error.message || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 后台静默加载活跃维护窗口，给服务卡片打"维护中"标记（不弹窗）
+async function markMaintenanceStatus() {
+  try {
+    const windows = (await listMaintenanceWindows(true)) || []
+    const inMaint = new Set(windows.map((w) => w.service))
+    services.value.forEach((s) => { s.inMaintenance = inMaint.has(s.name) })
+  } catch (e) {
+    // 维护窗口加载失败不阻断服务列表
   }
 }
 
@@ -130,6 +196,106 @@ function handleRegister() {
 function handleEdit(service) {
   editingService.value = service
   dialogVisible.value = true
+}
+
+// ========== P1 维护窗口 ==========
+const maintVisible = ref(false)
+const maintLoading = ref(false)
+const maintCreating = ref(false)
+const activeWindows = ref([])
+const maintForm = reactive({ services: [], reason: '', until: null, note: '' })
+
+function openMaintenance() {
+  maintForm.services = []
+  maintForm.reason = ''
+  maintForm.until = null
+  maintForm.note = ''
+  maintVisible.value = true
+  loadActiveWindows()
+}
+
+async function loadActiveWindows() {
+  maintLoading.value = true
+  try {
+    activeWindows.value = (await listMaintenanceWindows(true)) || []
+    // 标记服务维护中（供卡片显示 tag）
+    const inMaint = new Set(activeWindows.value.map((w) => w.service))
+    services.value.forEach((s) => { s.inMaintenance = inMaint.has(s.name) })
+  } catch (e) {
+    ElMessage.error(e.message || '加载维护窗口失败')
+  } finally {
+    maintLoading.value = false
+  }
+}
+
+function disabledBeforeNowPlus15(date) {
+  return date.getTime() < Date.now() + 15 * 60 * 1000
+}
+
+function fmtUntil(t) {
+  if (!t) return ''
+  const d = new Date(t)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function createMaintenance() {
+  if (maintForm.services.length === 0) {
+    ElMessage.warning('请选择至少一个服务')
+    return
+  }
+  if (!maintForm.reason) {
+    ElMessage.warning('请填写维护原因')
+    return
+  }
+  if (!maintForm.until) {
+    ElMessage.warning('请选择到期时间')
+    return
+  }
+  const min = Date.now() + 15 * 60 * 1000
+  if (new Date(maintForm.until).getTime() <= min) {
+    ElMessage.warning('到期时间必须晚于当前 15 分钟')
+    return
+  }
+  maintCreating.value = true
+  try {
+    const created = await createMaintenanceWindow({
+      services: maintForm.services,
+      reason: maintForm.reason.trim(),
+      until: maintForm.until,
+      note: maintForm.note.trim() || undefined,
+    })
+    ElMessage.success(`已创建 ${created.length} 个维护窗口`)
+    maintForm.services = []
+    maintForm.reason = ''
+    maintForm.until = null
+    maintForm.note = ''
+    loadActiveWindows()
+    loadServices()
+  } catch (e) {
+    ElMessage.error(e.message || '创建维护窗口失败')
+  } finally {
+    maintCreating.value = false
+  }
+}
+
+async function endMaintenance(w) {
+  try {
+    await ElMessageBox.confirm(`确定提前结束服务 ${w.service} 的维护窗口吗？结束后告警将恢复正常通知。`, '提前结束', {
+      type: 'warning',
+      confirmButtonText: '提前结束',
+      cancelButtonText: '取消',
+    })
+    w._ending = true
+    await endMaintenanceWindow(w.id)
+    ElMessage.success('已提前结束')
+    loadActiveWindows()
+    loadServices()
+  } catch (e) {
+    if (e !== 'cancel' && e && e.message) ElMessage.error(e.message)
+  } finally {
+    w._ending = false
+  }
 }
 
 // 表单提交成功
@@ -243,6 +409,76 @@ async function handleCheck(service, done) {
   justify-content: center;
   height: 100%;
   min-height: 400px;
+}
+
+/* P1 维护窗口弹窗 */
+.maint-section {
+  margin-bottom: 18px;
+}
+
+.maint-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.maint-form {
+  background: rgba(241, 245, 249, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 6px;
+}
+
+.maint-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.maint-list {
+  min-height: 60px;
+}
+
+.maint-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: #FFF;
+}
+
+.maint-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.maint-item-service {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  color: var(--text-primary);
+}
+
+.maint-item-reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maint-item-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 @media (max-width: 900px) {
