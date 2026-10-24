@@ -24,6 +24,17 @@
         <el-button :icon="Refresh" :loading="loading" @click="loadMetrics">
           刷新
         </el-button>
+
+        <!-- P2-A12 自动刷新 -->
+        <el-tooltip content="开启后按所选间隔自动刷新指标数据" placement="top">
+          <div class="auto-refresh">
+            <el-switch v-model="autoRefresh" @change="toggleAutoRefresh" style="--el-switch-on-color: #3B82F6" />
+            <el-select v-model="refreshInterval" size="small" style="width: 86px" :disabled="!autoRefresh" @change="restartAutoRefresh">
+              <el-option label="30秒" :value="30" />
+              <el-option label="60秒" :value="60" />
+            </el-select>
+          </div>
+        </el-tooltip>
       </div>
     </header>
 
@@ -133,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Clock } from '@element-plus/icons-vue'
 import MetricCard from '@/components/metrics/MetricCard.vue'
@@ -145,6 +156,9 @@ const selectedService = ref('')
 const range = ref('5m')
 const loading = ref(false)
 const lastUpdateTime = ref('')
+const autoRefresh = ref(false)
+const refreshInterval = ref(30)
+let refreshTimer = null
 
 const snapshot = reactive({
   cpu: 0,
@@ -183,6 +197,38 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  stopAutoRefresh()
+})
+
+function toggleAutoRefresh() {
+  if (autoRefresh.value) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+}
+
+function restartAutoRefresh() {
+  if (autoRefresh.value) {
+    startAutoRefresh()
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh()
+  refreshTimer = setInterval(() => {
+    loadMetrics()
+  }, refreshInterval.value * 1000)
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
 async function loadMetrics() {
   if (!selectedService.value) return
 
@@ -217,6 +263,13 @@ function transformSeries(data, transform) {
 }
 
 /* 顶部栏 */
+.auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
 .page-header {
   height: 64px;
   background: rgba(255, 255, 255, 0.72);

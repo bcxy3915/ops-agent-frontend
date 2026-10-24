@@ -22,6 +22,17 @@
         <el-button type="primary" :icon="Plus" v-if="canWrite" @click="handleRegister">
           注册服务
         </el-button>
+
+        <!-- P2-A12 自动刷新 -->
+        <el-tooltip content="开启后按所选间隔自动刷新服务列表" placement="top">
+          <div class="auto-refresh">
+            <el-switch v-model="autoRefresh" @change="toggleAutoRefresh" style="--el-switch-on-color: #3B82F6" />
+            <el-select v-model="refreshInterval" size="small" style="width: 86px" :disabled="!autoRefresh" @change="restartAutoRefresh">
+              <el-option label="30秒" :value="30" />
+              <el-option label="60秒" :value="60" />
+            </el-select>
+          </div>
+        </el-tooltip>
       </div>
     </header>
 
@@ -97,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Search, Plus, Tools } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ServiceCard from '@/components/service/ServiceCard.vue'
@@ -116,6 +127,9 @@ const authStore = useAuthStore()
 
 const services = ref([])
 const loading = ref(false)
+const autoRefresh = ref(false)
+const refreshInterval = ref(30)
+let refreshTimer = null
 
 const filters = reactive({
   keyword: '',
@@ -133,6 +147,38 @@ const editingService = ref(null)
 onMounted(() => {
   loadServices()
 })
+
+onBeforeUnmount(() => {
+  stopAutoRefresh()
+})
+
+function toggleAutoRefresh() {
+  if (autoRefresh.value) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+}
+
+function restartAutoRefresh() {
+  if (autoRefresh.value) {
+    startAutoRefresh()
+  }
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh()
+  refreshTimer = setInterval(() => {
+    loadServices()
+  }, refreshInterval.value * 1000)
+}
+
+function stopAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
 
 // 加载列表
 async function loadServices() {
@@ -364,6 +410,13 @@ async function handleCheck(service, done) {
 }
 
 /* 顶部栏 */
+.auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
 .page-header {
   height: 64px;
   background: rgba(255, 255, 255, 0.72);
