@@ -104,7 +104,7 @@ const routes = [
         path: "users",
         name: "UserManage",
         component: () => import("@/views/UserManage.vue"),
-        meta: { title: "用户管理", requiresAuth: true, permission: "user:read" },
+        meta: { title: "用户管理", requiresAuth: true, permission: "user:manage" },
       },
       {
         path: "tenants",
@@ -122,7 +122,7 @@ const routes = [
         path: "roles",
         name: "RoleManage",
         component: () => import("@/views/rbac/Roles.vue"),
-        meta: { title: "角色权限", requiresAuth: true, permission: "role:manage", platformOnly: true },
+        meta: { title: "角色权限", requiresAuth: true, platformOnly: true },
       },
     ],
   },

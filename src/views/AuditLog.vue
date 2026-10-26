@@ -124,7 +124,9 @@ import {
   getOperationLabel
 } from '@/api/audit'
 import { listUsers } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 
+const authStore = useAuthStore()
 const operationTypes = ref([])
 const usernames = ref([])
 const userMap = ref({})
@@ -147,7 +149,7 @@ const pagination = reactive({
 onMounted(() => {
   operationTypes.value = getOperationTypes()
   usernames.value = getUsernames()
-  loadUsers()
+  if (authStore.hasPermission('user:read')) loadUsers()
   loadLogs()
 })
 

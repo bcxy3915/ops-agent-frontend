@@ -16,7 +16,7 @@
           <el-option label="DOWN" value="DOWN" />
           <el-option label="UNKNOWN" value="UNKNOWN" />
         </el-select>
-        <el-button v-if="canWrite" :icon="Tools" @click="openMaintenance">
+        <el-button v-if="canMaintain" :icon="Tools" @click="openMaintenance">
           维护窗口
         </el-button>
         <el-button type="primary" :icon="Plus" v-if="canWrite" @click="handleRegister">
@@ -138,7 +138,8 @@ const filters = reactive({
 })
 
 const hasFilter = computed(() => !!(filters.keyword || filters.env || filters.status))
-const canWrite = computed(() => authStore.isOperator)
+const canWrite = computed(() => authStore.hasPermission('service:manage'))
+const canMaintain = computed(() => authStore.hasPermission('maintenance:manage'))
 
 // 弹窗
 const dialogVisible = ref(false)
@@ -215,6 +216,7 @@ async function loadServices() {
 
 // 后台静默加载活跃维护窗口，给服务卡片打"维护中"标记（不弹窗）
 async function markMaintenanceStatus() {
+  if (!canMaintain.value) return
   try {
     const windows = (await listMaintenanceWindows(true)) || []
     const inMaint = new Set(windows.map((w) => w.service))
@@ -252,6 +254,7 @@ const activeWindows = ref([])
 const maintForm = reactive({ services: [], reason: '', until: null, note: '' })
 
 function openMaintenance() {
+  if (!canMaintain.value) return
   maintForm.services = []
   maintForm.reason = ''
   maintForm.until = null

@@ -130,7 +130,7 @@
       </div>
 
       <!-- 组织与权限 -->
-      <div v-if="can('dept:read') || can('user:read') || authStore.isPlatformAdmin" class="home-group">
+      <div v-if="can('dept:read') || can('user:manage') || authStore.isPlatformAdmin" class="home-group">
         <div class="home-group-label">组织与权限</div>
         <div class="home-cards">
           <div v-if="can('dept:read')" class="home-card" @click="go('/admin/depts')">
@@ -144,7 +144,7 @@
             <el-icon class="hc-arrow" color="#CBD5E1"><ArrowRight /></el-icon>
           </div>
 
-          <div v-if="can('user:read')" class="home-card" @click="go('/admin/users')">
+          <div v-if="can('user:manage')" class="home-card" @click="go('/admin/users')">
             <div class="hc-icon hc-teal">
               <el-icon><User /></el-icon>
             </div>

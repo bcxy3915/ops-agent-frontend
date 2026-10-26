@@ -133,7 +133,7 @@ const navGroups = computed(() => {
       label: '组织与权限',
       items: [
         { path: '/admin/depts', label: '部门树', icon: Connection, visible: can('dept:read') },
-        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: can('user:read') },
+        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: can('user:manage') },
         { path: '/admin/roles', label: '角色权限', icon: Key, visible: authStore.isPlatformAdmin },
       ],
     },
