@@ -131,7 +131,7 @@
         <label>发布方式</label>
         <div class="kb-seg">
           <button :class="{ on: form.publishMode === 'review' }" @click="form.publishMode = 'review'">提交审核</button>
-          <button :class="{ on: form.publishMode === 'direct' }" @click="form.publishMode = 'direct'">直接发布（管理员）</button>
+          <button v-if="canDirectPublish" :class="{ on: form.publishMode === 'direct' }" @click="form.publishMode = 'direct'">直接发布（管理员）</button>
         </div>
       </div>
     </div>
@@ -171,12 +171,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Document, Close, InfoFilled, Warning, WarningFilled, CircleCheckFilled
 } from '@element-plus/icons-vue'
-import { checkKnowledgeQuality, uploadKnowledgeDocument, publishKnowledgeDocument } from '@/api/knowledge'
+import { checkKnowledgeQuality, uploadKnowledgeDocument, publishKnowledgeDocument, submitKnowledgeDocument } from '@/api/knowledge'
+import { listServices } from '@/api/service'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
@@ -186,6 +187,11 @@ const emit = defineEmits(['update:modelValue', 'published'])
 
 const auth = useAuthStore()
 const fileInput = ref(null)
+const canDirectPublish = computed(() =>
+  auth.hasPermission('knowledge:review')
+  || auth.hasPermission('knowledge:publish')
+  || auth.hasPermission('knowledge:admin')
+)
 
 const steps = ['上传文件', '质量检查', '分类信息', '确认发布']
 const step = ref(1)
@@ -195,7 +201,17 @@ const typeOptions = [
   { value: '应急预案', label: '应急预案', desc: '故障处置、降级方案' },
   { value: '服务/指标字典', label: '服务/指标字典', desc: '服务清单、阈值定义' }
 ]
-const serviceOptions = ['todo-service', 'order-service', 'payment-gateway', 'message-queue', 'order-db', '通用']
+const serviceOptions = ref([])
+onMounted(async () => {
+  try {
+    const list = await listServices()
+    const set = new Set(['通用'])
+    ;(list || []).forEach((s) => s?.name && set.add(s.name))
+    serviceOptions.value = Array.from(set).sort()
+  } catch {
+    serviceOptions.value = ['通用']
+  }
+})
 
 const files = ref([])
 let fileSeq = 0
@@ -336,6 +352,9 @@ async function stepNext() {
 /** step4 确认发布：逐个上传；选择直接发布时上传成功后自动审核通过 */
 async function publish() {
   if (!files.value.length) return
+  if (form.publishMode === 'direct' && !canDirectPublish.value) {
+    form.publishMode = 'review'
+  }
   publishing.value = true
   try {
     const tags = tagsText.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
@@ -353,7 +372,9 @@ async function publish() {
       if (tags.length) fd.append('tags', tags.join(','))
       const res = await uploadKnowledgeDocument(fd)
       publishedCount += 1
-      if (form.publishMode === 'direct') {
+      if (form.publishMode === 'review') {
+        await submitKnowledgeDocument(res.id)
+      } else {
         try {
           await publishKnowledgeDocument(res.id, { approved: true })
         } catch (_) {
@@ -361,7 +382,8 @@ async function publish() {
         }
       }
     }
-    ElMessage.success(`已上传 ${publishedCount} 个文档${form.publishMode === 'review' ? '，等待审核' : ''}`)
+    ElMessage.success(`已上传 ${publishedCount} 个文档${form.publishMode === 'review' ? '，等待审核' : '，审核状态请查看知识库'}`)
+    window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
     emit('published')
     emit('update:modelValue', false)
     resetAll()

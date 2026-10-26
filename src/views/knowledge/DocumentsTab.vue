@@ -168,6 +168,14 @@
 
     <!-- 编辑文档 -->
     <el-dialog v-model="editVisible" title="编辑文档" width="720px" destroy-on-close>
+      <el-alert
+        v-if="editForm.reviewStatus === 'APPROVED'"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 14px"
+        title="当前文档已发布：仅修改标题/标签等元数据不会影响线上版本；修改正文会下线当前版本并重新进入审核。"
+      />
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="标题" required>
           <el-input v-model="editForm.title" maxlength="255" />
@@ -234,9 +242,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh } from '@element-plus/icons-vue'
 import {
   listKnowledgeDocuments, getKnowledgeDocument, listDocumentHits, listDocumentVersions,
-  updateKnowledgeDocument, deleteKnowledgeDocument, publishKnowledgeDocument,
+  updateKnowledgeDocument, deleteKnowledgeDocument, reviewKnowledgeDocument, submitKnowledgeDocument,
   rollbackKnowledgeDocument, createKnowledgeOnline, reloadKnowledgeBase
 } from '@/api/knowledge'
+import { listServices } from '@/api/service'
 import { useAuthStore } from '@/stores/auth'
 import { LAYER_MAP, STATUS_MAP, DOCTYPE_MAP, formatDay, fmtNumber } from './kb-utils'
 
@@ -247,6 +256,7 @@ const emit = defineEmits(['open-upload'])
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.hasPermission('knowledge:write'))
+const canReview = computed(() => auth.hasPermission('knowledge:review'))
 // ★ 管理员可重建索引（后端 5 分钟限 3 次）
 const canReload = computed(() => auth.hasPermission('knowledge:admin'))
 
@@ -272,6 +282,17 @@ const pagination = reactive({ page: 1, size: 10, total: 0 })
 const rows = ref([])
 const loading = ref(false)
 const serviceOptions = ref([])
+
+async function loadServiceOptions() {
+  try {
+    const list = await listServices()
+    const set = new Set(['通用'])
+    ;(list || []).forEach((s) => s?.name && set.add(s.name))
+    serviceOptions.value = Array.from(set).sort()
+  } catch {
+    serviceOptions.value = ['通用']
+  }
+}
 
 async function load() {
   loading.value = true
@@ -344,19 +365,26 @@ function hitSourceLabel(s) {
 // ---- 操作列 ----
 function opsFor(row) {
   const status = row.trustStatus
+  const reviewStatus = row.reviewStatus
+  const isOwner = !!auth.username && row.owner === auth.username
+  const isDraft = ['DRAFT', 'REJECTED'].includes(reviewStatus)
+  const isPending = ['PENDING_DEPT', 'PENDING_TENANT'].includes(reviewStatus)
   const ops = []
-  const needView = ['VERIFIED', 'EXPIRED'].includes(status)
-  const needReview = ['PENDING', 'AI_DRAFT'].includes(status)
-  ops.push({ key: 'view', label: needReview ? '预览' : '查看', fn: viewDoc })
+  ops.push({ key: 'view', label: isPending || isDraft ? '预览' : '查看', fn: viewDoc })
   if (status === 'VERIFIED' || row.layer === 'CASE') {
     ops.push({ key: 'hits', label: '检索命中', fn: viewHits })
   }
   ops.push({ key: 'versions', label: '更新日志', fn: viewVersions })
-  if (needReview && canWrite.value) {
-    ops.push({ key: 'approve', label: status === 'AI_DRAFT' ? '校对' : '通过', fn: approveDoc })
-    if (status === 'PENDING') ops.push({ key: 'reject', label: '驳回', danger: true, fn: rejectDoc })
+  // 作者提交审核；审核人不能是作者，审核入口只给有 review 权限且非作者的人
+  if (isDraft && canWrite.value && isOwner) {
+    ops.push({ key: 'submit', label: '提交审核', fn: submitDoc })
   }
-  if (canWrite.value && row.layer !== 'CASE') {
+  if (isPending && canReview.value && !isOwner) {
+    ops.push({ key: 'approve', label: '通过', fn: approveDoc })
+    ops.push({ key: 'reject', label: '驳回', danger: true, fn: rejectDoc })
+  }
+  const canEditDoc = canWrite.value && (isOwner || auth.hasPermission('knowledge:admin'))
+  if (canEditDoc && row.layer !== 'CASE') {
     ops.push({ key: 'edit', label: '编辑', fn: openEdit })
     ops.push({ key: 'delete', label: '删除', danger: true, fn: deleteDoc })
   }
@@ -395,17 +423,41 @@ async function viewVersions(row) {
     ElMessage.error(e.message || '加载版本历史失败')
   }
 }
+async function submitDoc(row) {
+  try {
+    await submitKnowledgeDocument(row.id)
+    ElMessage.success('已提交审核')
+    load()
+    window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
+  } catch (e) {
+    ElMessage.error(e.message || '提交审核失败')
+  }
+}
 async function approveDoc(row) {
-  await publishDoc(row, true, '已通过审核')
+  await reviewDoc(row, true, '通过')
 }
 async function rejectDoc(row) {
-  await publishDoc(row, false, '已驳回')
-}
-async function publishDoc(row, approved, okMsg) {
+  let comment = ''
   try {
-    await publishKnowledgeDocument(row.id, { approved })
-    ElMessage.success(okMsg)
+    const res = await ElMessageBox.prompt('请填写驳回原因', '驳回文档', {
+      confirmButtonText: '驳回',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputValidator: (value) => (value && value.trim() ? true : '请填写驳回原因')
+    })
+    comment = res.value.trim()
+  } catch (_) {
+    return
+  }
+  await reviewDoc(row, false, comment)
+}
+async function reviewDoc(row, approved, comment) {
+  try {
+    const level = row.reviewStatus === 'PENDING_TENANT' ? 'TENANT' : 'DEPT'
+    await reviewKnowledgeDocument(row.id, { level, approved, comment })
+    ElMessage.success(approved ? '已通过审核' : '已驳回')
     load()
+    window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
   } catch (e) {
     ElMessage.error(e.message || '操作失败')
   }
@@ -413,7 +465,9 @@ async function publishDoc(row, approved, okMsg) {
 async function deleteDoc(row) {
   try {
     await ElMessageBox.confirm(
-      `删除文档「${row.title}」将连带清除向量索引，不可恢复。确认删除？`,
+      row.reviewStatus === 'APPROVED'
+        ? `文档「${row.title}」已发布，删除后会立即下线并清除向量索引，不可恢复。确认删除？`
+        : `删除文档「${row.title}」将连带清除向量索引，不可恢复。确认删除？`,
       '删除确认',
       { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' }
     )
@@ -452,20 +506,48 @@ async function doRollback(version) {
 // ---- 编辑 ----
 const editVisible = ref(false)
 const saving = ref(false)
-const editForm = reactive({ id: null, title: '', owner: '', serviceIds: [], rawContent: '' })
+const editForm = reactive({
+  id: null, title: '', owner: '', serviceIds: [], rawContent: '',
+  reviewStatus: '', originalRawContent: ''
+})
 const editTagsText = ref('')
 
-function openEdit(row) {
+async function openEdit(row) {
   editForm.id = row.id
   editForm.title = row.title
   editForm.owner = row.owner || ''
   editForm.serviceIds = [...(row.serviceIds || [])]
   editForm.rawContent = ''
   editTagsText.value = (row.tags || []).join(', ')
+  try {
+    const detail = await getKnowledgeDocument(row.id)
+    editForm.title = detail.title || editForm.title
+    editForm.owner = detail.owner || editForm.owner
+    editForm.serviceIds = [...(detail.serviceIds || editForm.serviceIds)]
+    editForm.rawContent = detail.rawContent || ''
+    editForm.originalRawContent = editForm.rawContent
+    editForm.reviewStatus = detail.reviewStatus || ''
+    editTagsText.value = (detail.tags || []).join(', ')
+  } catch (e) {
+    ElMessage.error(e.message || '加载文档内容失败')
+    return
+  }
   editVisible.value = true
 }
 async function saveEdit() {
   if (!editForm.title.trim()) return ElMessage.warning('标题不能为空')
+  const contentChanged = editForm.rawContent !== editForm.originalRawContent
+  if (editForm.reviewStatus === 'APPROVED' && contentChanged) {
+    try {
+      await ElMessageBox.confirm(
+        '修改正文会立即下线当前已发布版本，并重新进入审核流程。是否继续？',
+        '修改已发布文档',
+        { type: 'warning', confirmButtonText: '继续修改', cancelButtonText: '取消' }
+      )
+    } catch (_) {
+      return
+    }
+  }
   saving.value = true
   try {
     await updateKnowledgeDocument(editForm.id, {
@@ -529,7 +611,10 @@ const versions = ref([])
 const versionDoc = ref(null)
 const versionVisible = ref(false)
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadServiceOptions()
+})
 watch(() => props.tick, () => load())
 </script>
 

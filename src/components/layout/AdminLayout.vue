@@ -88,7 +88,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -186,13 +186,26 @@ onMounted(async () => {
     alertBadge.value = 0
   }
   if (authStore.hasPermission('knowledge:review')) {
-    try {
-      const stats = await getKnowledgeStats()
-      reviewBadge.value = stats?.pendingDocs || 0
-    } catch {
-      reviewBadge.value = 0
-    }
+    await loadReviewBadge()
+    window.addEventListener('knowledge-review-updated', loadReviewBadge)
   }
+})
+
+async function loadReviewBadge() {
+  if (!authStore.hasPermission('knowledge:review')) {
+    reviewBadge.value = 0
+    return
+  }
+  try {
+    const stats = await getKnowledgeStats()
+    reviewBadge.value = stats?.pendingDocs || 0
+  } catch {
+    reviewBadge.value = 0
+  }
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('knowledge-review-updated', loadReviewBadge)
 })
 
 function isActive(path) {

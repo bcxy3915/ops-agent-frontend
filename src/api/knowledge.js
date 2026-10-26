@@ -72,6 +72,11 @@ export async function deleteKnowledgeDocument(id) {
   return request.delete(`/knowledge/documents/${id}`);
 }
 
+/** 提交审核（作者将草稿/已驳回文档提交部门审核） */
+export async function submitKnowledgeDocument(id) {
+  return request.post(`/knowledge/documents/${id}/submit`);
+}
+
 /** 发布审核（{ approved: true/false }） */
 export async function publishKnowledgeDocument(id, data) {
   return request.post(`/knowledge/documents/${id}/publish`, data);
