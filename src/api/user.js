@@ -11,6 +11,8 @@ export async function listUsers(params = {}) {
 
   if (params.keyword) query.keyword = params.keyword;
   if (params.role) query.role = params.role;
+  if (params.tenantId) query.tenantId = params.tenantId;
+  if (params.deptId) query.deptId = params.deptId;
 
   // ★ enabled 是 Boolean，false 也要传，不能用 truthy 判断
   if (

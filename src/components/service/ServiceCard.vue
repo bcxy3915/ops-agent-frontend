@@ -8,7 +8,7 @@
                 <span v-if="service.inMaintenance" class="maint-tag" title="当前处于维护窗口内，告警将静默处理">维护中</span>
             </div>
 
-            <el-dropdown trigger="click" @command="handleCommand">
+            <el-dropdown v-if="canManage" trigger="click" @command="handleCommand">
                 <button class="more-btn">
                     <el-icon>
                         <MoreFilled />
@@ -81,8 +81,9 @@ const authStore = useAuthStore()
 const checking = ref(false)
 
 // 权限
-const canEdit = computed(() => authStore.isOperator)
-const canDelete = computed(() => authStore.isAdmin)
+const canManage = computed(() => authStore.hasPermission('service:manage'))
+const canEdit = canManage
+const canDelete = canManage
 
 // 相对时间
 const relativeTime = computed(() => {

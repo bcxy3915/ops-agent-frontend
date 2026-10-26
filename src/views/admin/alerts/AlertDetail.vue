@@ -419,7 +419,9 @@ import { useAuthStore } from '@/stores/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('alert:ack')
+  || auth.hasPermission('alert:resolve')
+  || auth.hasPermission('alert:silence'))
 
 const eventId = route.params.id
 const loading = ref(true)

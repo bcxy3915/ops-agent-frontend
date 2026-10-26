@@ -7,6 +7,8 @@
         <span class="page-subtitle">服务、指标、告警、知识库与系统设置统一管理</span>
       </div>
       <div class="page-header-actions">
+        <span class="header-pill">{{ tenantLabel }}</span>
+        <span class="header-pill">{{ deptLabel }}</span>
         <el-button @click="goChat">
           <el-icon style="margin-right: 4px">
             <ArrowLeft />
@@ -26,7 +28,7 @@
           <span class="hero-tag">指标监控</span>
           <span class="hero-tag">告警 · 通知</span>
           <span class="hero-tag">知识库</span>
-          <span class="hero-tag" v-if="isAdmin">审计 · 用户</span>
+          <span class="hero-tag" v-if="can('audit:read')">审计 · 用户</span>
         </div>
       </div>
       <div class="hero-badge">
@@ -110,9 +112,65 @@
 
     <!-- ========== 快捷卡片 ========== -->
     <div class="home-groups">
-      <!-- 服务运维 -->
+      <!-- 平台管理 -->
+      <div v-if="can('tenant:manage')" class="home-group">
+        <div class="home-group-label">平台管理</div>
+        <div class="home-cards">
+          <div class="home-card" @click="go('/admin/tenants')">
+            <div class="hc-icon hc-blue">
+              <el-icon><OfficeBuilding /></el-icon>
+            </div>
+            <div class="hc-body">
+              <div class="hc-title">租户管理</div>
+              <div class="hc-desc">开通 / 停用 / 审核模式 / 配额</div>
+            </div>
+            <el-icon class="hc-arrow" color="#CBD5E1"><ArrowRight /></el-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- 组织与权限 -->
+      <div v-if="can('dept:read') || can('user:manage') || authStore.isPlatformAdmin" class="home-group">
+        <div class="home-group-label">组织与权限</div>
+        <div class="home-cards">
+          <div v-if="can('dept:read')" class="home-card" @click="go('/admin/depts')">
+            <div class="hc-icon hc-teal">
+              <el-icon><Connection /></el-icon>
+            </div>
+            <div class="hc-body">
+              <div class="hc-title">部门树</div>
+              <div class="hc-desc">多级部门 · 上级看下级 · 服务归属</div>
+            </div>
+            <el-icon class="hc-arrow" color="#CBD5E1"><ArrowRight /></el-icon>
+          </div>
+
+          <div v-if="can('user:manage')" class="home-card" @click="go('/admin/users')">
+            <div class="hc-icon hc-teal">
+              <el-icon><User /></el-icon>
+            </div>
+            <div class="hc-body">
+              <div class="hc-title">用户管理</div>
+              <div class="hc-desc">邮箱 · 部门 · 多角色 · 状态</div>
+            </div>
+            <el-icon class="hc-arrow" color="#CBD5E1"><ArrowRight /></el-icon>
+          </div>
+
+          <div v-if="authStore.isPlatformAdmin" class="home-card" @click="go('/admin/roles')">
+            <div class="hc-icon hc-teal">
+              <el-icon><Key /></el-icon>
+            </div>
+            <div class="hc-body">
+              <div class="hc-title">角色权限</div>
+              <div class="hc-desc">平台 / 企业 / 部门角色 · 权限点矩阵</div>
+            </div>
+            <el-icon class="hc-arrow" color="#CBD5E1"><ArrowRight /></el-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- 监控运维 -->
       <div class="home-group">
-        <div class="home-group-label">服务运维</div>
+        <div class="home-group-label">监控运维</div>
         <div class="home-cards">
           <div class="home-card" @click="go('/admin/services')">
             <div class="hc-icon hc-blue">
@@ -159,7 +217,7 @@
             </el-icon>
           </div>
 
-          <div v-if="isOperator" class="home-card" @click="go('/admin/alert-rules')">
+          <div v-if="can('alert:manage')" class="home-card" @click="go('/admin/alert-rules')">
             <div class="hc-icon hc-slate">
               <el-icon>
                 <SetUp />
@@ -194,14 +252,32 @@
               <ArrowRight />
             </el-icon>
           </div>
+
+          <div v-if="can('knowledge:review')" class="home-card" @click="go('/admin/review')">
+            <div class="hc-icon hc-teal">
+              <el-icon>
+                <DocumentChecked />
+              </el-icon>
+            </div>
+            <div class="hc-body">
+              <div class="hc-title">
+                审核工作台
+                <span v-if="reviewCount" class="hc-badge">{{ reviewCount }}</span>
+              </div>
+              <div class="hc-desc">部门 / 企业两级审核 · 四眼原则</div>
+            </div>
+            <el-icon class="hc-arrow" color="#CBD5E1">
+              <ArrowRight />
+            </el-icon>
+          </div>
         </div>
       </div>
 
-      <!-- 系统配置（管理员） -->
-      <div v-if="isAdmin" class="home-group">
-        <div class="home-group-label">系统配置</div>
+      <!-- 系统设置 -->
+      <div v-if="can('notification:manage') || can('audit:read')" class="home-group">
+        <div class="home-group-label">系统设置</div>
         <div class="home-cards">
-          <div class="home-card" @click="go('/admin/channels')">
+          <div v-if="can('notification:manage')" class="home-card" @click="go('/admin/channels')">
             <div class="hc-icon hc-violet">
               <el-icon>
                 <ChatDotRound />
@@ -216,7 +292,7 @@
             </el-icon>
           </div>
 
-          <div class="home-card" @click="go('/admin/audit')">
+          <div v-if="can('audit:read')" class="home-card" @click="go('/admin/audit')">
             <div class="hc-icon hc-cyan">
               <el-icon>
                 <Document />
@@ -224,22 +300,7 @@
             </div>
             <div class="hc-body">
               <div class="hc-title">审计日志</div>
-              <div class="hc-desc">全量操作记录可追溯</div>
-            </div>
-            <el-icon class="hc-arrow" color="#CBD5E1">
-              <ArrowRight />
-            </el-icon>
-          </div>
-
-          <div class="home-card" @click="go('/admin/users')">
-            <div class="hc-icon hc-green">
-              <el-icon>
-                <User />
-              </el-icon>
-            </div>
-            <div class="hc-body">
-              <div class="hc-title">用户管理</div>
-              <div class="hc-desc">账号、角色、权限</div>
+              <div class="hc-desc">租户 / 部门维度 · 审核与敏感访问留痕</div>
             </div>
             <el-icon class="hc-arrow" color="#CBD5E1">
               <ArrowRight />
@@ -252,25 +313,33 @@
 </template>
 
 <script setup>
-import { reactive, computed, onMounted } from 'vue'
+import { reactive, computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowLeft, ArrowRight, Monitor, TrendCharts, Bell, SetUp,
-  Collection, ChatDotRound, Document, User, Refresh
+  Collection, ChatDotRound, Document, User, Refresh,
+  OfficeBuilding, Connection, Key, DocumentChecked
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getAlertSummary } from '@/api/alerts'
 import { getKnowledgeStats } from '@/api/knowledge'
+import { listDepts } from '@/api/rbac'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const isAdmin = computed(() => authStore.role === 'ADMIN')
-const isOperator = computed(() => authStore.role === 'ADMIN' || authStore.role === 'OPERATOR')
+const can = (code) => authStore.hasPermission(code)
+const deptName = ref('')
+const tenantLabel = computed(() => {
+  if (authStore.tenantId === '0') return '平台'
+  return authStore.tenantId === 't-default' ? '星海科技' : (authStore.tenantId || '本企业')
+})
+const deptLabel = computed(() => deptName.value || '未分配部门')
 
 // ========== 实时概览（P1 规格 2.3）：单卡失败显示 "—" 并提供重试 ==========
 const summary = reactive({ loading: false, error: false, data: null })
 const kstats = reactive({ loading: false, error: false, data: null })
+const reviewCount = computed(() => kstats.data?.pendingDocs || 0)
 
 function displayValue(v, state) {
   if (state.error) return '—'
@@ -314,7 +383,19 @@ function goChat() {
   router.push('/chat')
 }
 
+async function loadDept() {
+  if (!authStore.hasPermission('dept:read')) return
+  try {
+    const list = await listDepts()
+    const hit = (list || []).find((d) => d.id === authStore.deptId)
+    if (hit) deptName.value = hit.name
+  } catch {
+    deptName.value = ''
+  }
+}
+
 onMounted(() => {
+  loadDept()
   loadSummary()
   loadStats()
 })
@@ -346,6 +427,15 @@ onMounted(() => {
   font-size: 13px;
   color: var(--text-muted);
   margin-left: 10px;
+}
+
+.header-pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(219, 234, 254, 0.7);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 /* ============ Hero ============ */
@@ -567,6 +657,22 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 600;
 }
 
 .hc-desc {

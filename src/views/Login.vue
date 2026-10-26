@@ -19,25 +19,18 @@
           </svg>
         </div>
         <h1>Ops Agent</h1>
-        <p class="subtitle">通用运维智能体</p>
+        <p class="subtitle">多租户运维智能体</p>
       </div>
 
       <!-- ★ 复用 LoginForm -->
       <LoginForm @success="handleSuccess" />
-
-      <div class="login-hint">
-        <el-icon>
-          <InfoFilled />
-        </el-icon>
-        演示模式：任意账号密码均可登录
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { useRouter, useRoute } from 'vue-router'
-import { ArrowLeft, InfoFilled } from '@element-plus/icons-vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import LoginForm from '@/components/auth/LoginForm.vue'
 
 const router = useRouter()

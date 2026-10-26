@@ -7,8 +7,8 @@
         <span class="page-subtitle">告警触发 → 快照 → AI 诊断 → 通知 → 处置沉淀，一条链路看完</span>
       </div>
       <div class="page-header-actions">
-        <el-button :icon="SetUp" @click="$router.push('/admin/alert-rules')">告警规则</el-button>
-        <el-button :icon="ChatDotRound" @click="$router.push('/admin/channels')">通知渠道</el-button>
+        <el-button v-if="auth.hasPermission('alert:manage')" :icon="SetUp" @click="$router.push('/admin/alert-rules')">告警规则</el-button>
+        <el-button v-if="auth.hasPermission('notification:manage')" :icon="ChatDotRound" @click="$router.push('/admin/channels')">通知渠道</el-button>
       </div>
     </div>
 
@@ -294,7 +294,9 @@ import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('alert:ack')
+  || auth.hasPermission('alert:resolve')
+  || auth.hasPermission('alert:silence'))
 
 const tab = ref(0)
 
@@ -749,7 +751,7 @@ function formatDateTime(d) {
 
 onMounted(() => {
   loadEvents()
-  loadDiagnoses()
+  if (auth.hasPermission('diagnosis:read')) loadDiagnoses()
   loadSummary()
 })
 </script>

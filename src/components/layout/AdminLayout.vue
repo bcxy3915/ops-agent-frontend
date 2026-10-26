@@ -26,6 +26,12 @@
         </div>
       </div>
 
+      <!-- 企业与角色上下文 -->
+      <div class="adm-context">
+        <div class="ctx-tenant">{{ tenantLabel }}</div>
+        <div class="ctx-sub">{{ deptLabel }} · {{ authStore.roleLabel }}</div>
+      </div>
+
       <!-- 分组导航 -->
       <nav class="adm-nav">
         <template v-for="group in navGroups" :key="group.key">
@@ -37,6 +43,7 @@
                 <component :is="item.icon" />
               </el-icon>
               {{ item.label }}
+              <span v-if="item.badge" class="adm-badge">{{ item.badge }}</span>
             </router-link>
           </div>
         </template>
@@ -81,58 +88,111 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, MoreFilled, User, SwitchButton,
   Monitor, TrendCharts, Bell, SetUp, Collection, Document, User as UserIcon,
-  ChatDotRound, UserFilled
+  ChatDotRound, UserFilled, OfficeBuilding, Connection, Key, DocumentChecked
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
+import { getAlertSummary } from '@/api/alerts'
+import { getKnowledgeStats } from '@/api/knowledge'
+import { listDepts } from '@/api/rbac'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 
-// ============ 分组导航（权限矩阵：监控运维全角色可见，告警规则仅 ADMIN/OPERATOR，系统设置仅 ADMIN） ============
+const alertBadge = ref(0)
+const reviewBadge = ref(0)
+const deptName = ref('')
+
+const tenantLabel = computed(() => {
+  if (authStore.tenantId === '0') return '平台'
+  return authStore.tenantId === 't-default' ? '星海科技' : (authStore.tenantId || '本企业')
+})
+const deptLabel = computed(() => deptName.value || '未分配部门')
+
+// ============ 分组导航（按权限点显隐） ============
 const navGroups = computed(() => {
-  const isAdmin = authStore.role === 'ADMIN'
-  const isOperator = authStore.role === 'ADMIN' || authStore.role === 'OPERATOR'
-  return [
+  const can = (code) => authStore.hasPermission(code)
+  const groups = [
+    {
+      key: 'platform',
+      label: '平台管理',
+      items: [
+        { path: '/admin/tenants', label: '租户管理', icon: OfficeBuilding, visible: can('tenant:manage') },
+      ],
+    },
+    {
+      key: 'org',
+      label: '组织与权限',
+      items: [
+        { path: '/admin/depts', label: '部门树', icon: Connection, visible: can('dept:read') },
+        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: can('user:manage') },
+        { path: '/admin/roles', label: '角色权限', icon: Key, visible: authStore.isPlatformAdmin },
+      ],
+    },
     {
       key: 'monitor',
       label: '监控运维',
-      visible: true,
       items: [
-        { path: '/admin/services', label: '服务管理', icon: Monitor, visible: true },
-        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: true },
-        { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: true },
-        { path: '/admin/oncall', label: '值班管理', icon: UserFilled, visible: isOperator },
-        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: isOperator },
+        { path: '/admin/services', label: '服务管理', icon: Monitor, visible: can('service:read') },
+        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: can('service:read') },
+        { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: can('alert:read'), badge: alertBadge.value },
+        { path: '/admin/oncall', label: '值班管理', icon: UserFilled, visible: can('oncall:manage') },
+        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: can('alert:manage') },
       ],
     },
     {
       key: 'knowledge',
       label: '知识库',
-      visible: true,
       items: [
-        { path: '/admin/knowledge', label: '知识库', icon: Collection, visible: true },
+        { path: '/admin/knowledge', label: '知识库', icon: Collection, visible: can('knowledge:read') },
+        { path: '/admin/review', label: '审核工作台', icon: DocumentChecked, visible: can('knowledge:review'), badge: reviewBadge.value },
       ],
     },
     {
       key: 'system',
       label: '系统设置',
-      visible: isAdmin,
       items: [
-        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound, visible: isAdmin },
-        { path: '/admin/audit', label: '审计日志', icon: Document, visible: isAdmin },
-        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: isAdmin },
+        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound, visible: can('notification:manage') },
+        { path: '/admin/audit', label: '审计日志', icon: Document, visible: can('audit:read') },
       ],
     },
   ]
+  return groups
+    .map((group) => ({ ...group, visible: group.items.some((item) => item.visible) }))
+})
+
+onMounted(async () => {
+  if (authStore.hasPermission('dept:read')) {
+    try {
+      const list = await listDepts()
+      const hit = (list || []).find((d) => d.id === authStore.deptId)
+      if (hit) deptName.value = hit.name
+    } catch {
+      // 无权限或加载失败时显示占位
+    }
+  }
+  try {
+    const summary = await getAlertSummary()
+    alertBadge.value = summary?.openCount || 0
+  } catch {
+    alertBadge.value = 0
+  }
+  if (authStore.hasPermission('knowledge:review')) {
+    try {
+      const stats = await getKnowledgeStats()
+      reviewBadge.value = stats?.pendingDocs || 0
+    } catch {
+      reviewBadge.value = 0
+    }
+  }
 })
 
 function isActive(path) {
@@ -165,10 +225,7 @@ async function handleCommand(command) {
 }
 
 // ============ 角色标签 ============
-const roleLabel = computed(() => {
-  const labels = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
-  return labels[authStore.role] || ''
-})
+const roleLabel = computed(() => authStore.roleLabel)
 </script>
 
 <style scoped>
@@ -240,6 +297,27 @@ const roleLabel = computed(() => {
   color: var(--text-muted);
 }
 
+/* ============ 企业/角色上下文 ============ */
+.adm-context {
+  margin: 10px 12px 4px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.55) 0%, rgba(224, 231, 255, 0.35) 100%);
+  border: 1px solid rgba(191, 219, 254, 0.6);
+}
+
+.ctx-tenant {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.ctx-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 /* ============ 分组导航 ============ */
 .adm-nav {
   flex: 1;
@@ -289,6 +367,20 @@ const roleLabel = computed(() => {
 .adm-nav-icon {
   width: 18px;
   font-size: 16px;
+}
+
+.adm-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 600;
 }
 
 /* ============ 底部用户区 ============ */

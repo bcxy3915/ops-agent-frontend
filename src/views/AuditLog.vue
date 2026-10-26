@@ -61,9 +61,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="username" label="用户" width="120">
+        <el-table-column prop="username" label="用户" width="230">
           <template #default="{ row }">
-            <span class="user-tag">{{ row.username }}</span>
+            <div class="user-cell">
+              <div class="user-name">{{ userName(row.username) }}</div>
+              <div v-if="userName(row.username) !== row.username" class="user-account">{{ row.username }}</div>
+            </div>
           </template>
         </el-table-column>
 
@@ -120,9 +123,13 @@ import {
   getUsernames,
   getOperationLabel
 } from '@/api/audit'
+import { listUsers } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 
+const authStore = useAuthStore()
 const operationTypes = ref([])
 const usernames = ref([])
+const userMap = ref({})
 
 const logs = ref([])
 const loading = ref(false)
@@ -142,8 +149,31 @@ const pagination = reactive({
 onMounted(() => {
   operationTypes.value = getOperationTypes()
   usernames.value = getUsernames()
+  if (authStore.hasPermission('user:read')) loadUsers()
   loadLogs()
 })
+
+async function loadUsers() {
+  try {
+    const list = await listUsers()
+    const map = {}
+    ;(list || []).forEach((u) => {
+      const name = u.displayName || u.username
+      if (u.username) map[u.username] = name
+      if (u.email && !u.email.includes('*')) map[u.email] = name
+    })
+    userMap.value = map
+  } catch {
+    userMap.value = {}
+  }
+}
+
+function userName(account) {
+  if (!account) return ''
+  if (userMap.value[account]) return userMap.value[account]
+  const prefix = account.includes('@') ? account.split('@')[0] : account
+  return userMap.value[prefix] || account
+}
 
 async function loadLogs() {
   loading.value = true
@@ -235,13 +265,27 @@ function formatTime(iso) {
   font-size: 12.5px;
 }
 
-.user-tag {
-  padding: 2px 8px;
-  background: rgba(219, 234, 254, 0.6);
-  color: var(--primary);
-  border-radius: 4px;
-  font-size: 12px;
+.user-cell {
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-account {
+  font-size: 11.5px;
+  color: var(--text-muted);
   font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-badge {

@@ -246,9 +246,9 @@ const props = defineProps({
 const emit = defineEmits(['open-upload'])
 
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('knowledge:write'))
 // ★ 管理员可重建索引（后端 5 分钟限 3 次）
-const canReload = computed(() => auth.role === 'ADMIN')
+const canReload = computed(() => auth.hasPermission('knowledge:admin'))
 
 async function handleReload() {
   try {

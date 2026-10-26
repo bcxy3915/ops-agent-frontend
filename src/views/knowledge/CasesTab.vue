@@ -186,7 +186,7 @@ const props = defineProps({
 })
 
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('knowledge:write'))
 
 const mode = ref('pending')
 const cards = ref([])

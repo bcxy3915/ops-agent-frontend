@@ -48,11 +48,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="角色" width="120">
+        <el-table-column label="角色" width="220">
           <template #default="{ row }">
-            <span class="role-badge" :class="row.role.toLowerCase()">
-              {{ roleLabel(row.role) }}
-            </span>
+            <el-tag v-for="r in (row.roles && row.roles.length ? row.roles : [row.role])" :key="r" size="small"
+              style="margin-right: 4px; margin-bottom: 2px">
+              {{ roleLabel(r) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="部门" width="140">
+          <template #default="{ row }">
+            {{ deptMap[row.deptId] || '-' }}
           </template>
         </el-table-column>
 
@@ -134,12 +141,14 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, InfoFilled, Plus, WarningFilled } from '@element-plus/icons-vue'
 import { listUsers, createUser, updateUser, deleteUser } from '@/api/user'
+import { listDepts } from '@/api/rbac'
 import { useAuthStore } from '@/stores/auth'
 import UserFormDialog from '@/components/user/UserFormDialog.vue'
 
 const authStore = useAuthStore()
-const canCreate = computed(() => authStore.isAdmin)
+const canCreate = computed(() => authStore.hasPermission('user:manage'))
 
+const deptMap = ref({})
 const users = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -172,7 +181,17 @@ const filters = reactive({
 
 onMounted(() => {
   loadUsers()
+  loadDeptOptions()
 })
+
+async function loadDeptOptions() {
+  try {
+    const list = await listDepts()
+    deptMap.value = Object.fromEntries((list || []).map((d) => [d.id, d.name]))
+  } catch {
+    deptMap.value = {}
+  }
+}
 
 function pickRole(v) {
   filters.role = v
@@ -227,7 +246,8 @@ async function handleSave(data) {
     if (data.mode === 'edit') {
       const payload = {
         displayName: data.displayName,
-        role: data.role,
+        deptId: data.deptId ?? null,
+        roleIds: data.roleIds || [],
         enabled: data.enabled,
         phone: data.phone || null,
         email: data.email || null,
@@ -240,7 +260,9 @@ async function handleSave(data) {
         username: data.username,
         displayName: data.displayName,
         password: data.password,
-        role: data.role,
+        tenantId: data.tenantId || undefined,
+        deptId: data.deptId ?? null,
+        roleIds: data.roleIds || [],
         phone: data.phone || null,
         email: data.email || null,
       })
@@ -294,7 +316,15 @@ async function doDelete() {
 }
 
 function roleLabel(role) {
-  const map = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
+  const map = {
+    PLATFORM_ADMIN: '平台管理员',
+    TENANT_ADMIN: '企业管理员',
+    DEPT_ADMIN: '部门管理员',
+    CONTRIBUTOR: '运维工程师',
+    VIEWER: '只读成员',
+    ADMIN: '管理员',
+    OPERATOR: '操作员',
+  }
   return map[role] || role
 }
 

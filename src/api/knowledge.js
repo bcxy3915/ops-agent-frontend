@@ -77,6 +77,11 @@ export async function publishKnowledgeDocument(id, data) {
   return request.post(`/knowledge/documents/${id}/publish`, data);
 }
 
+/** 分级审核（{ level: 'DEPT'|'TENANT', approved, comment }） */
+export async function reviewKnowledgeDocument(id, data) {
+  return request.post(`/knowledge/documents/${id}/review`, data);
+}
+
 /** 自动超期判定 */
 export async function scanExpiredDocuments() {
   return request.post("/knowledge/documents/expire-scan");

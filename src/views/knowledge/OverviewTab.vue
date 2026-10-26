@@ -32,7 +32,7 @@
         <div class="kb-card-hd">
           <div class="kb-card-title">三层知识体系</div>
           <div style="display: flex; align-items: center; gap: 8px">
-            <button v-if="auth.isAdmin" class="kb-btn kb-btn-sm" :disabled="rebuilding" @click="handleRebuild">
+            <button v-if="auth.hasPermission('knowledge:admin')" class="kb-btn kb-btn-sm" :disabled="rebuilding" @click="handleRebuild">
               {{ rebuilding ? '重建中…' : '重建索引' }}
             </button>
             <button v-if="canWrite" class="kb-btn kb-btn-sm" :disabled="rebuilding" @click="$emit('open-upload')">＋ 上传知识</button>
@@ -203,7 +203,7 @@ const props = defineProps({
 const emit = defineEmits(['switch-tab', 'open-upload'])
 
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('knowledge:write'))
 const rebuilding = ref(false)
 
 // ---- 重建索引 ----
