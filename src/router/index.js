@@ -122,7 +122,7 @@ const routes = [
         path: "roles",
         name: "RoleManage",
         component: () => import("@/views/rbac/Roles.vue"),
-        meta: { title: "角色权限", requiresAuth: true, permission: "role:manage" },
+        meta: { title: "角色权限", requiresAuth: true, permission: "role:manage", platformOnly: true },
       },
     ],
   },
@@ -175,7 +175,14 @@ router.beforeEach(async (to, from, next) => {
     return;
   }
 
-  // 5. 兼容旧角色校验（meta.roles）
+  // 5. 仅平台管理员可访问
+  if (to.meta.platformOnly && !authStore.isPlatformAdmin) {
+    ElMessage.warning("仅平台管理员可访问");
+    next("/admin/home");
+    return;
+  }
+
+  // 6. 兼容旧角色校验（meta.roles）
   if (to.meta.roles && isLoggedIn) {
     if (!to.meta.roles.some((r) => authStore.hasRole(r))) {
       ElMessage.warning("无访问权限");
