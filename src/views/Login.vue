@@ -29,7 +29,7 @@
         <el-icon>
           <InfoFilled />
         </el-icon>
-        演示模式：任意账号密码均可登录
+        使用企业邮箱或用户名登录
       </div>
     </div>
   </div>

@@ -1,5 +1,5 @@
 <template>
-    <el-dialog :model-value="modelValue" :title="mode === 'edit' ? '编辑用户' : '新增用户'" width="480px"
+    <el-dialog :model-value="modelValue" :title="mode === 'edit' ? '编辑用户' : '新增用户'" width="520px"
         :close-on-click-modal="false" @close="handleClose">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" label-position="right">
             <el-form-item label="用户名">
@@ -8,7 +8,6 @@
                 <div v-if="mode === 'create'" class="form-hint">创建后不可修改，用于登录</div>
             </el-form-item>
 
-            <!-- ★ P0 规格 5.1：displayName -->
             <el-form-item label="姓名" prop="displayName">
                 <el-input v-model="form.displayName" placeholder="显示名称（1~50 字），列表与告警认领处展示" />
             </el-form-item>
@@ -16,15 +15,27 @@
             <el-form-item label="密码" :prop="mode === 'create' ? 'password' : undefined">
                 <el-input v-model="form.password" type="password" show-password
                     :placeholder="mode === 'edit' ? '留空则不修改' : '至少 6 位'" />
-                <div v-if="mode === 'edit'" class="form-hint">留空表示保持原密码不变（重置密码：联系管理员走账号安全流程）</div>
+                <div v-if="mode === 'edit'" class="form-hint">留空表示保持原密码不变</div>
             </el-form-item>
 
-            <el-form-item label="角色" prop="role">
-                <el-select v-model="form.role" style="width: 100%">
-                    <el-option label="管理员（ADMIN）—— 全部权限" value="ADMIN" />
-                    <el-option label="操作员（OPERATOR）—— 可注册/编辑服务" value="OPERATOR" />
-                    <el-option label="查看者（VIEWER）—— 只读" value="VIEWER" />
+            <el-form-item v-if="authStore.isPlatformAdmin" label="租户">
+                <el-select v-model="form.tenantId" style="width: 100%" placeholder="选择租户"
+                    :disabled="mode === 'edit'" @change="handleTenantChange">
+                    <el-option v-for="t in tenants" :key="t.id" :label="`${t.name}（${t.code}）`" :value="t.id" />
                 </el-select>
+            </el-form-item>
+
+            <el-form-item label="部门">
+                <el-tree-select v-model="form.deptId" :data="deptTree" clearable check-strictly
+                    :props="{ label: 'name', value: 'id', children: 'children' }"
+                    placeholder="选择部门" style="width: 100%" />
+            </el-form-item>
+
+            <el-form-item label="角色" prop="roleIds">
+                <el-select v-model="form.roleIds" multiple style="width: 100%" placeholder="选择角色">
+                    <el-option v-for="r in roles" :key="r.id" :label="`${r.name}（${r.code}）`" :value="r.id" />
+                </el-select>
+                <div class="form-hint">角色决定菜单与操作权限，可多选</div>
             </el-form-item>
 
             <el-form-item label="状态">
@@ -54,6 +65,8 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
+import { listDepts, listRoles, listTenants } from '@/api/rbac'
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -63,47 +76,26 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'success'])
 
+const authStore = useAuthStore()
 const formRef = ref(null)
 const submitting = ref(false)
+
+const roles = ref([])
+const tenants = ref([])
+const depts = ref([])
+const deptTree = ref([])
 
 const form = reactive({
     username: '',
     displayName: '',
     password: '',
-    role: 'OPERATOR',
+    tenantId: '',
+    deptId: null,
+    roleIds: [],
     enabled: true,
     phone: '',
     email: ''
 })
-
-// 打开时按模式初始化
-watch(
-    () => props.modelValue,
-    (val) => {
-        if (!val) return
-        if (props.mode === 'edit' && props.user) {
-            Object.assign(form, {
-                username: props.user.username || '',
-                displayName: props.user.displayName || '',
-                password: '',
-                role: props.user.role || 'OPERATOR',
-                enabled: props.user.enabled !== false,
-                phone: props.user.phone || '',
-                email: props.user.email || ''
-            })
-        } else {
-            Object.assign(form, {
-                username: '',
-                displayName: '',
-                password: '',
-                role: 'OPERATOR',
-                enabled: true,
-                phone: '',
-                email: ''
-            })
-        }
-    }
-)
 
 const rules = {
     displayName: [
@@ -113,13 +105,94 @@ const rules = {
     password: [
         { min: 6, message: '密码至少 6 位', trigger: 'blur' }
     ],
-    role: [{ required: true, message: '请选择角色', trigger: 'change' }],
     phone: [
         { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }
     ],
     email: [
         { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
     ]
+}
+
+// 打开时加载选项并按模式初始化
+watch(
+    () => props.modelValue,
+    async (val) => {
+        if (!val) return
+        await loadOptions()
+        if (props.mode === 'edit' && props.user) {
+            const roleIds = roles.value
+                .filter((r) => (props.user.roles || []).includes(r.code))
+                .map((r) => r.id)
+            Object.assign(form, {
+                username: props.user.username || '',
+                displayName: props.user.displayName || '',
+                password: '',
+                tenantId: props.user.tenantId || '',
+                deptId: props.user.deptId ?? null,
+                roleIds,
+                enabled: props.user.enabled !== false,
+                phone: props.user.phone || '',
+                email: props.user.email || ''
+            })
+            await loadDepts()
+        } else {
+            Object.assign(form, {
+                username: '',
+                displayName: '',
+                password: '',
+                tenantId: authStore.tenantId || '',
+                deptId: authStore.deptId ?? null,
+                roleIds: [],
+                enabled: true,
+                phone: '',
+                email: ''
+            })
+            await loadDepts()
+        }
+    }
+)
+
+async function loadOptions() {
+    try {
+        roles.value = await listRoles()
+    } catch {
+        roles.value = []
+    }
+    if (authStore.isPlatformAdmin) {
+        try {
+            tenants.value = await listTenants()
+        } catch {
+            tenants.value = []
+        }
+    }
+}
+
+async function loadDepts() {
+    try {
+        const params = authStore.isPlatformAdmin && form.tenantId ? { tenantId: form.tenantId } : {}
+        depts.value = await listDepts(params)
+        deptTree.value = buildTree(depts.value)
+    } catch {
+        depts.value = []
+        deptTree.value = []
+    }
+}
+
+function buildTree(list) {
+    const map = new Map()
+    list.forEach((item) => map.set(item.id, { ...item, children: [] }))
+    const roots = []
+    map.forEach((node) => {
+        const parent = node.parentId ? map.get(node.parentId) : null
+        if (parent) parent.children.push(node)
+        else roots.push(node)
+    })
+    return roots
+}
+
+function handleTenantChange() {
+    form.deptId = null
+    loadDepts()
 }
 
 async function handleSubmit() {
@@ -133,6 +206,10 @@ async function handleSubmit() {
 
     if (props.mode === 'create' && !form.username) {
         ElMessage.warning('请输入用户名')
+        return
+    }
+    if (!form.roleIds.length) {
+        ElMessage.warning('请至少选择一个角色')
         return
     }
 
@@ -157,7 +234,9 @@ function handleClose() {
         username: '',
         displayName: '',
         password: '',
-        role: 'OPERATOR',
+        tenantId: '',
+        deptId: null,
+        roleIds: [],
         enabled: true,
         phone: '',
         email: ''

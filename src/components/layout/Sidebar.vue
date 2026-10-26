@@ -296,10 +296,7 @@ async function handleCommand(command) {
 }
 
 // ============ 角色标签 ============
-const roleLabel = computed(() => {
-  const labels = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
-  return labels[authStore.role] || ''
-})
+const roleLabel = computed(() => authStore.roleLabel)
 </script>
 
 <style scoped>

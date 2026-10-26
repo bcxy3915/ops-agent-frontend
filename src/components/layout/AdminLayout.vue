@@ -87,7 +87,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, MoreFilled, User, SwitchButton,
   Monitor, TrendCharts, Bell, SetUp, Collection, Document, User as UserIcon,
-  ChatDotRound, UserFilled
+  ChatDotRound, UserFilled, OfficeBuilding, Connection, Key, DocumentChecked
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -97,42 +97,44 @@ const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 
-// ============ 分组导航（权限矩阵：监控运维全角色可见，告警规则仅 ADMIN/OPERATOR，系统设置仅 ADMIN） ============
+// ============ 分组导航（按权限点显隐） ============
 const navGroups = computed(() => {
-  const isAdmin = authStore.role === 'ADMIN'
-  const isOperator = authStore.role === 'ADMIN' || authStore.role === 'OPERATOR'
-  return [
+  const can = (code) => authStore.hasPermission(code)
+  const groups = [
     {
       key: 'monitor',
       label: '监控运维',
-      visible: true,
       items: [
-        { path: '/admin/services', label: '服务管理', icon: Monitor, visible: true },
-        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: true },
-        { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: true },
-        { path: '/admin/oncall', label: '值班管理', icon: UserFilled, visible: isOperator },
-        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: isOperator },
+        { path: '/admin/services', label: '服务管理', icon: Monitor, visible: can('service:read') },
+        { path: '/admin/metrics', label: '指标监控', icon: TrendCharts, visible: can('service:read') },
+        { path: '/admin/alerts', label: '告警中心', icon: Bell, visible: can('alert:read') },
+        { path: '/admin/oncall', label: '值班管理', icon: UserFilled, visible: can('oncall:manage') },
+        { path: '/admin/alert-rules', label: '告警规则', icon: SetUp, visible: can('alert:manage') },
       ],
     },
     {
       key: 'knowledge',
       label: '知识库',
-      visible: true,
       items: [
-        { path: '/admin/knowledge', label: '知识库', icon: Collection, visible: true },
+        { path: '/admin/knowledge', label: '知识库', icon: Collection, visible: can('knowledge:read') },
+        { path: '/admin/review', label: '审核工作台', icon: DocumentChecked, visible: can('knowledge:review') },
       ],
     },
     {
       key: 'system',
       label: '系统设置',
-      visible: isAdmin,
       items: [
-        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound, visible: isAdmin },
-        { path: '/admin/audit', label: '审计日志', icon: Document, visible: isAdmin },
-        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: isAdmin },
+        { path: '/admin/tenants', label: '租户管理', icon: OfficeBuilding, visible: can('tenant:manage') },
+        { path: '/admin/depts', label: '部门管理', icon: Connection, visible: can('dept:read') },
+        { path: '/admin/roles', label: '角色权限', icon: Key, visible: can('role:manage') },
+        { path: '/admin/users', label: '用户管理', icon: UserIcon, visible: can('user:read') },
+        { path: '/admin/channels', label: '通知渠道', icon: ChatDotRound, visible: can('notification:manage') },
+        { path: '/admin/audit', label: '审计日志', icon: Document, visible: can('audit:read') },
       ],
     },
   ]
+  return groups
+    .map((group) => ({ ...group, visible: group.items.some((item) => item.visible) }))
 })
 
 function isActive(path) {
@@ -165,10 +167,7 @@ async function handleCommand(command) {
 }
 
 // ============ 角色标签 ============
-const roleLabel = computed(() => {
-  const labels = { ADMIN: '管理员', OPERATOR: '操作员', VIEWER: '查看者' }
-  return labels[authStore.role] || ''
-})
+const roleLabel = computed(() => authStore.roleLabel)
 </script>
 
 <style scoped>

@@ -14,6 +14,21 @@ async function getRouter() {
   return routerRef;
 }
 
+/** 清理本地登录态（含 RBAC 字段） */
+function clearAuthStorage() {
+  [
+    "ops_token",
+    "ops_username",
+    "ops_role",
+    "ops_user_id",
+    "ops_tenant_id",
+    "ops_dept_id",
+    "ops_roles",
+    "ops_permissions",
+    "ops_need_bind_email",
+  ].forEach((key) => localStorage.removeItem(key));
+}
+
 // 创建 Axios 实例
 const request = axios.create({
   baseURL: "/api",
@@ -57,9 +72,7 @@ request.interceptors.response.use(
     switch (status) {
       case 401:
         ElMessage.error("未登录或登录已过期");
-        localStorage.removeItem("ops_token");
-        localStorage.removeItem("ops_username");
-        localStorage.removeItem("ops_role");
+        clearAuthStorage();
 
         // ★ 用 router.push 无刷新跳转；带上当前路径用于登录后回跳
         getRouter().then((router) => {
