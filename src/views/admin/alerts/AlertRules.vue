@@ -93,7 +93,14 @@
     </div>
 
     <!-- ========== 新建 / 编辑 dialog ========== -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑告警规则' : '新建告警规则'" width="680px" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑告警规则' : '新建告警规则'"
+      width="760px"
+      top="5vh"
+      class="rule-dialog"
+      destroy-on-close
+    >
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="110px">
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="form.name" placeholder="如：5xx-错误率告警" />
@@ -606,8 +613,12 @@ onMounted(() => {
 
 .esc-level-row {
   display: grid;
-  grid-template-columns: 130px 190px 170px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.esc-field {
+  min-width: 0;
 }
 
 .esc-field .esc-lab {
@@ -625,5 +636,28 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+/* 弹窗固定高度：内容区滚动，底部按钮始终可见 */
+:global(.rule-dialog) {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 10vh - 40px);
+  max-height: 820px;
+  max-width: calc(100vw - 32px);
+  margin-bottom: 0;
+}
+
+:global(.rule-dialog .el-dialog__body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+:global(.rule-dialog .el-dialog__footer) {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 </style>

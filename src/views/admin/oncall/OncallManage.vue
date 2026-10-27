@@ -1,68 +1,99 @@
 <template>
-  <div class="page-container">
+  <div class="page">
     <div class="page-header">
-      <div>
+      <div class="page-header-left">
         <h2 class="page-title">值班管理</h2>
-        <p class="page-sub">全局主值班 / 备值班配置（可多人），不做排班轮换。通知联动：首报 → 主值班，升级 L1 → 备值班，L2 → ADMIN；规则显式 toUsers 优先；值班表为空时回退角色兜底。</p>
+        <span class="page-subtitle">主值班 / 备值班配置与通知升级联动</span>
       </div>
-      <div class="page-actions">
+      <div class="page-header-actions">
         <el-button type="primary" :icon="Plus" :disabled="!canWrite" @click="openAdd('PRIMARY')">添加主值班</el-button>
         <el-button type="warning" plain :icon="Plus" :disabled="!canWrite" @click="openAdd('BACKUP')">添加备值班</el-button>
       </div>
     </div>
 
-    <div v-loading="loading" class="oncall-grid">
-      <!-- 主值班 -->
-      <div class="oncall-card">
-        <div class="oncall-card-hd">
-          <span class="oncall-dot oncall-dot-primary"></span>
-          <b>主值班（PRIMARY）</b>
-          <span class="kb-tag kb-tag-teal">{{ primaryList.length }} 人</span>
-        </div>
-        <div v-if="primaryList.length === 0" class="oncall-empty">暂无主值班，通知将回退角色兜底</div>
-        <div v-for="m in primaryList" :key="m.id" class="oncall-row">
-          <div class="oncall-avatar">{{ avatarText(m.userId) }}</div>
-          <div class="oncall-info">
-            <div class="oncall-name">用户 #{{ m.userId }}</div>
-            <div class="oncall-meta">由 {{ m.addedBy || '-' }} 添加 · {{ formatDay(m.addedAt) }}</div>
+    <div class="page-body" v-loading="loading">
+      <div class="oncall-summary">
+        <div class="oncall-summary-card">
+          <div class="oncall-summary-icon primary"><el-icon><UserFilled /></el-icon></div>
+          <div>
+            <div class="oncall-summary-label">主值班（PRIMARY）</div>
+            <div class="oncall-summary-value">{{ primaryList.length }} <small>人</small></div>
           </div>
-          <el-button v-if="canWrite" link type="danger" :icon="Delete" @click="doRemove(m)">移除</el-button>
+        </div>
+        <div class="oncall-summary-card">
+          <div class="oncall-summary-icon backup"><el-icon><UserFilled /></el-icon></div>
+          <div>
+            <div class="oncall-summary-label">备值班（BACKUP）</div>
+            <div class="oncall-summary-value">{{ backupList.length }} <small>人</small></div>
+          </div>
         </div>
       </div>
 
-      <!-- 备值班 -->
-      <div class="oncall-card">
-        <div class="oncall-card-hd">
-          <span class="oncall-dot oncall-dot-backup"></span>
-          <b>备值班（BACKUP）</b>
-          <span class="kb-tag kb-tag-warning">{{ backupList.length }} 人</span>
-        </div>
-        <div v-if="backupList.length === 0" class="oncall-empty">暂无备值班，升级 L1 通知将回退角色兜底</div>
-        <div v-for="m in backupList" :key="m.id" class="oncall-row">
-          <div class="oncall-avatar">{{ avatarText(m.userId) }}</div>
-          <div class="oncall-info">
-            <div class="oncall-name">用户 #{{ m.userId }}</div>
-            <div class="oncall-meta">由 {{ m.addedBy || '-' }} 添加 · {{ formatDay(m.addedAt) }}</div>
-          </div>
-          <el-button v-if="canWrite" link type="danger" :icon="Delete" @click="doRemove(m)">移除</el-button>
-        </div>
+      <div class="oncall-table-card">
+        <el-table :data="sortedMembers" stripe>
+          <el-table-column label="值班类型" width="130">
+            <template #default="{ row }">
+              <span class="oncall-role-tag" :class="row.dutyRole === 'PRIMARY' ? 'primary' : 'backup'">
+                {{ row.dutyRole === 'PRIMARY' ? '主值班' : '备值班' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="值班人" min-width="240">
+            <template #default="{ row }">
+              <div class="oncall-person">
+                <div class="oncall-avatar" :class="row.dutyRole === 'PRIMARY' ? 'primary' : 'backup'">
+                  {{ avatarText(row.userId) }}
+                </div>
+                <div class="oncall-person-info">
+                  <div class="oncall-person-name">{{ userName(row.userId) }}</div>
+                  <div class="oncall-person-id">{{ row.userId }}</div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="添加人" width="150">
+            <template #default="{ row }">{{ row.addedBy || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="添加时间" width="180">
+            <template #default="{ row }">{{ formatDay(row.addedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="right">
+            <template #default="{ row }">
+              <el-button v-if="canWrite" link type="danger" :icon="Delete" @click="doRemove(row)">移除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!loading && sortedMembers.length === 0" description="暂无值班人，通知将回退角色兜底" :image-size="80" />
+      </div>
+
+      <div class="oncall-tip">
+        <el-icon><InfoFilled /></el-icon>
+        <span>通知联动：首报 → 主值班，升级 L1 → 备值班，L2 → ADMIN；规则显式配置的 toUsers 优先于值班表。值班表为空时按角色兜底。</span>
       </div>
     </div>
 
     <!-- 添加值班人 -->
-    <el-dialog v-model="addVisible" :title="addRole === 'PRIMARY' ? '添加主值班' : '添加备值班'" width="460px" destroy-on-close>
+    <el-dialog v-model="addVisible" :title="addRole === 'PRIMARY' ? '添加主值班' : '添加备值班'" width="480px" destroy-on-close>
       <el-form :model="addForm" label-width="90px">
-        <el-form-item label="用户 ID" required>
-          <el-input v-model.number="addForm.userId" type="number" placeholder="请输入值班人的用户 ID" />
+        <el-form-item label="值班人" required>
+          <el-select v-model="addForm.userId" filterable placeholder="选择用户" style="width: 100%">
+            <el-option
+              v-for="u in userOptions"
+              :key="u.id"
+              :label="u.displayName ? `${u.displayName}（${u.username}）` : u.username"
+              :value="u.id"
+            />
+          </el-select>
+          <div class="oncall-form-hint">只能选择当前企业内的用户。</div>
         </el-form-item>
         <el-form-item label="值班角色">
-          <el-select v-model="addForm.dutyRole" style="width: 200px">
+          <el-select v-model="addForm.dutyRole" style="width: 100%">
             <el-option label="主值班 PRIMARY" value="PRIMARY" />
             <el-option label="备值班 BACKUP" value="BACKUP" />
           </el-select>
         </el-form-item>
       </el-form>
-      <div class="kb-muted" style="font-size: 12px; padding-left: 90px">提示：同一用户同一角色重复添加会被忽略；通知规则显式配置的 toUsers 始终优先于值班表。</div>
+      <div class="oncall-form-tip">同一用户同一角色重复添加会被忽略；通知规则显式配置的 toUsers 始终优先于值班表。</div>
       <template #footer>
         <el-button @click="addVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="doAdd">保存</el-button>
@@ -74,18 +105,25 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete } from '@element-plus/icons-vue'
+import { Plus, Delete, UserFilled, InfoFilled } from '@element-plus/icons-vue'
 import { listOncallMembers, addOncallMember, removeOncallMember } from '@/api/oncall'
+import { listUsers } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { formatDay } from '@/views/knowledge/kb-utils'
 
 const auth = useAuthStore()
-const canWrite = computed(() => auth.isOperator)
+const canWrite = computed(() => auth.hasPermission('oncall:manage'))
 
 const loading = ref(false)
 const members = ref([])
+const userOptions = ref([])
 const primaryList = computed(() => members.value.filter((m) => m.dutyRole === 'PRIMARY'))
 const backupList = computed(() => members.value.filter((m) => m.dutyRole === 'BACKUP'))
+const sortedMembers = computed(() => [...members.value].sort((a, b) => {
+  if (a.dutyRole !== b.dutyRole) return a.dutyRole === 'PRIMARY' ? -1 : 1
+  return new Date(b.addedAt || 0) - new Date(a.addedAt || 0)
+}))
+const userMap = computed(() => Object.fromEntries(userOptions.value.map((u) => [u.id, u])))
 
 async function load() {
   loading.value = true
@@ -98,24 +136,38 @@ async function load() {
   }
 }
 
+async function loadUsers() {
+  try {
+    userOptions.value = (await listUsers({ enabled: true })) || []
+  } catch {
+    userOptions.value = []
+  }
+}
+
+function userName(userId) {
+  const user = userMap.value[userId]
+  return user?.displayName || user?.username || userId || '-'
+}
+
 function avatarText(userId) {
-  return String(userId || '?').slice(-2)
+  const name = userName(userId)
+  return String(name || '?').slice(0, 1)
 }
 
 // ---- 添加 ----
 const addVisible = ref(false)
 const saving = ref(false)
 const addRole = ref('PRIMARY')
-const addForm = reactive({ userId: null, dutyRole: 'PRIMARY' })
+const addForm = reactive({ userId: '', dutyRole: 'PRIMARY' })
 function openAdd(role) {
   addRole.value = role
-  addForm.userId = null
+  addForm.userId = ''
   addForm.dutyRole = role
   addVisible.value = true
 }
 async function doAdd() {
-  if (!addForm.userId || addForm.userId <= 0) {
-    ElMessage.warning('请输入有效的用户 ID')
+  if (!addForm.userId) {
+    ElMessage.warning('请选择值班人')
     return
   }
   saving.value = true
@@ -135,7 +187,7 @@ async function doAdd() {
 async function doRemove(m) {
   try {
     await ElMessageBox.confirm(
-      `确认移除值班人「用户 #${m.userId}」吗？`,
+      `确认移除值班人「${userName(m.userId)}」吗？`,
       '移除确认',
       { type: 'warning', confirmButtonText: '移除', confirmButtonClass: 'el-button--danger' }
     )
@@ -151,59 +203,149 @@ async function doRemove(m) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadUsers()
+})
 </script>
 
 <style scoped>
-.oncall-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+.page {
+  padding: 20px 24px 32px;
+  max-width: 1160px;
+  margin: 0 auto;
 }
-.oncall-card {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 12px;
-  padding: 16px;
-}
-.oncall-card-hd {
+
+.page-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  margin-bottom: 18px;
 }
-.oncall-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
 }
-.oncall-dot-primary {
-  background: #10b981;
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+
+.page-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
-.oncall-dot-backup {
-  background: #f59e0b;
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
-}
-.oncall-empty {
-  padding: 28px 0;
-  text-align: center;
-  color: #94a3b8;
+
+.page-subtitle {
   font-size: 13px;
+  color: var(--text-muted);
+  margin-left: 0;
 }
-.oncall-row {
+
+.page-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.oncall-table-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+
+.oncall-role-tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.oncall-role-tag.primary {
+  color: #059669;
+  background: #ECFDF5;
+}
+
+.oncall-role-tag.backup {
+  color: #D97706;
+  background: #FFFBEB;
+}
+
+.oncall-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.oncall-summary-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 4px;
-  border-top: 1px dashed rgba(226, 232, 240, 0.7);
+  padding: 14px 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
 }
-.oncall-avatar {
-  width: 36px;
-  height: 36px;
+
+.oncall-summary-icon {
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.oncall-summary-icon.primary {
+  color: #059669;
+  background: #ECFDF5;
+}
+
+.oncall-summary-icon.backup {
+  color: #D97706;
+  background: #FFFBEB;
+}
+
+.oncall-summary-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.oncall-summary-value {
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.oncall-summary-value small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.oncall-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oncall-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   color: #fff;
   display: flex;
   align-items: center;
@@ -212,23 +354,73 @@ onMounted(load)
   font-weight: 600;
   flex-shrink: 0;
 }
-.oncall-info {
-  flex: 1;
+
+.oncall-avatar.primary {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.oncall-avatar.backup {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.oncall-person-info {
   min-width: 0;
 }
-.oncall-name {
-  font-size: 14px;
+
+.oncall-person-name {
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-primary);
 }
-.oncall-meta {
+
+.oncall-person-id {
+  margin-top: 2px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-muted);
+}
+
+.oncall-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(30, 64, 175, 0.05);
+  border: 1px solid rgba(30, 64, 175, 0.08);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.oncall-tip .el-icon {
+  color: var(--primary);
   margin-top: 2px;
 }
+
+.oncall-form-hint,
+.oncall-form-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.oncall-form-hint {
+  margin-top: 4px;
+}
+
+.oncall-form-tip {
+  padding-left: 90px;
+}
+
 @media (max-width: 900px) {
-  .oncall-grid {
+  .oncall-summary {
     grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
   }
 }
 </style>
