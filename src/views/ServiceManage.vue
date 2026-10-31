@@ -351,7 +351,14 @@ async function endMaintenance(w) {
 async function handleFormSuccess(data) {
   try {
     if (data.isEdit) {
-      await updateService(data.name, data)
+      // name 走路径，不作为请求体字段；其余可编辑字段按更新接口提交
+      await updateService(data.name, {
+        baseUrl: data.baseUrl,
+        healthPath: data.healthPath,
+        metricsPath: data.metricsPath,
+        owner: data.owner,
+        env: data.env
+      })
       ElMessage.success('更新成功')
     } else {
       await registerService(data)

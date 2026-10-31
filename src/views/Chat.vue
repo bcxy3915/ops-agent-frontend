@@ -121,20 +121,30 @@ function goToLogin() {
   router.push('/login')
 }
 
-// ============ P1：告警上下文（/chat?ref=alert:{id}&context=...&q=...） ============
-const alertCtx = computed(() => {
-  const ref = route.query.ref || ''
-  const m = String(ref).match(/^alert:(\d+)$/)
-  if (!m) return { id: null, context: '', q: '' }
-  return {
-    id: m[1],
-    context: String(route.query.context || '').slice(0, 800),
-    q: String(route.query.q || ''),
+// ============ P1：告警上下文（URL 带 ref 标识，大文本经 sessionStorage 中转） ============
+const alertCtx = ref({ id: null, context: '', q: '' })
+
+function loadAlertCtx() {
+  const ref = String(route.query.ref || '')
+  const m = ref.match(/^alert:(\d+)$/)
+  if (!m) return
+  let payload = {}
+  try {
+    payload = JSON.parse(sessionStorage.getItem('chat:alert-ctx') || '{}')
+  } catch {
+    payload = {}
   }
-})
+  // 优先 sessionStorage（新链路），回退 URL query（兼容旧链接）
+  alertCtx.value = {
+    id: m[1],
+    context: String(payload.context ?? route.query.context ?? '').slice(0, 800),
+    q: String(payload.q ?? route.query.q ?? ''),
+  }
+}
 
 // 进入对话时：若带 q 且当前无消息，自动发送（附带告警上下文）；否则恢复最近一次对话
 onMounted(async () => {
+  loadAlertCtx()
   const ctx = alertCtx.value
   if (ctx.id && ctx.q && chatStore.messages.length === 0) {
     const question = ctx.context

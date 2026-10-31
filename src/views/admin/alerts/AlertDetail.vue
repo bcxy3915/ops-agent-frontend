@@ -772,11 +772,13 @@ function buildAlertContext() {
 
 function goChat() {
   const ctx = buildAlertContext()
-  const query = { ref: `alert:${event.value.id}`, context: ctx }
+  const payload = { ref: `alert:${event.value.id}`, context: ctx }
   if (diag.value && diag.value.rootCause) {
-    query.q = `这个告警的根因是「${diag.value.rootCause}」，结合上下文继续分析处置建议？`
+    payload.q = `这个告警的根因是「${diag.value.rootCause}」，结合上下文继续分析处置建议？`
   }
-  router.push({ path: '/chat', query })
+  // 大文本经 sessionStorage 中转：中文 URL 编码后膨胀 9 倍，800 字上下文会撑爆请求头
+  sessionStorage.setItem('chat:alert-ctx', JSON.stringify(payload))
+  router.push({ path: '/chat', query: { ref: payload.ref } })
 }
 
 function fmtTime(t) {

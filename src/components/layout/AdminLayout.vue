@@ -98,7 +98,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
-import { getAlertSummary } from '@/api/alerts'
+import { useAlertStore } from '@/stores/alert'
 import { getKnowledgeStats } from '@/api/knowledge'
 import { listDepts } from '@/api/rbac'
 
@@ -106,8 +106,10 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const alertStore = useAlertStore()
 
-const alertBadge = ref(0)
+// 菜单徽标 = store 的待处理数（FIRING/ACK/SILENCED），随轮询/操作实时更新
+const alertBadge = computed(() => alertStore.openCount)
 const reviewBadge = ref(0)
 const deptName = ref('')
 
@@ -179,16 +181,26 @@ onMounted(async () => {
       // 无权限或加载失败时显示占位
     }
   }
-  try {
-    const summary = await getAlertSummary()
-    alertBadge.value = summary?.openCount || 0
-  } catch {
-    alertBadge.value = 0
-  }
+  // 告警菜单徽标：挂载即拉 + 30s 轮询（页面隐藏时跳过）+ 切回可见立即补一次
+  alertStore.fetchSummary()
+  pollTimer = setInterval(() => {
+    if (!document.hidden) alertStore.fetchSummary()
+  }, 30000)
+  document.addEventListener('visibilitychange', onVisible)
   if (authStore.hasPermission('knowledge:review')) {
     await loadReviewBadge()
     window.addEventListener('knowledge-review-updated', loadReviewBadge)
   }
+})
+
+let pollTimer = null
+function onVisible() {
+  if (!document.hidden) alertStore.fetchSummary()
+}
+
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', onVisible)
 })
 
 async function loadReviewBadge() {

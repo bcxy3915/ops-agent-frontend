@@ -40,19 +40,18 @@ function handle401() {
 export function askStream(sessionId, question, { onChunk, onDone, onError, onCitations }) {
   const authStore = useAuthStore();
 
-  const url = `/api/ops/ask/stream?question=${encodeURIComponent(
-    question
-  )}&sessionId=${encodeURIComponent(sessionId)}`;
-
   const controller = new AbortController();
   let stopped = false;
 
-  fetch(url, {
-    method: "GET",
+  // 长文本（如告警上下文）走 POST body：中文 URL 编码后膨胀 9 倍，拼 query 会撑爆请求头
+  fetch("/api/ops/ask/stream", {
+    method: "POST",
     headers: {
       Accept: "text/event-stream",
+      "Content-Type": "application/json",
       Authorization: `Bearer ${authStore.token}`,
     },
+    body: JSON.stringify({ question, sessionId }),
     signal: controller.signal,
   })
     .then(async (response) => {

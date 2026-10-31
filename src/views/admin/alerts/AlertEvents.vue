@@ -291,9 +291,11 @@ import {
 } from '@/api/alerts'
 import { listDiagnoses } from '@/api/diagnosis'
 import { useAuthStore } from '@/stores/auth'
+import { useAlertStore } from '@/stores/alert'
 
 const router = useRouter()
 const auth = useAuthStore()
+const alertStore = useAlertStore()
 const canWrite = computed(() => auth.hasPermission('alert:ack')
   || auth.hasPermission('alert:resolve')
   || auth.hasPermission('alert:silence'))
@@ -355,6 +357,8 @@ async function loadSummary() {
   summaryErr.value = false
   try {
     summary.value = await getAlertSummary()
+    // 同步喂给全局 store，驱动侧边栏菜单徽标实时更新
+    alertStore.openCount = (summary.value && summary.value.openCount) || 0
   } catch (e) {
     summaryErr.value = true
     summary.value = null
@@ -508,6 +512,7 @@ async function handleClaim(row) {
     await claimAlertEvent(row.id)
     ElMessage.success(`已认领告警，当前处置人 @${auth.username}`)
     loadEvents()
+    alertStore.fetchSummary()
   } catch (e) {
     ElMessage.error(e.message || '认领失败')
   }
@@ -524,6 +529,7 @@ async function handleTakeover(row) {
     await claimAlertEvent(row.id)
     ElMessage.success(`已接管，当前处置人 @${auth.username}`)
     loadEvents()
+    alertStore.fetchSummary()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
   }
@@ -535,6 +541,7 @@ async function handleAck(row) {
     await acknowledgeAlertEvent(row.id)
     ElMessage.success(`已确认，处置人 @${auth.username}`)
     loadEvents()
+    alertStore.fetchSummary()
   } catch (e) {
     ElMessage.error(e.message || '确认失败')
   }
@@ -554,6 +561,7 @@ async function doResolve() {
     ElMessage.success('已标记恢复')
     resolveVisible.value = false
     loadEvents()
+    alertStore.fetchSummary()
   } catch (e) {
     ElMessage.error(e.message || '标记恢复失败')
   } finally {
@@ -690,6 +698,7 @@ async function handleBatchAck() {
     ElMessage.success(`已确认 ${ok} 条${skipped > 0 ? `，跳过已恢复 ${skipped} 条` : ''}`)
     selectedRows.value = []
     loadEvents()
+    alertStore.fetchSummary()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
   } finally {
@@ -707,6 +716,7 @@ async function handleBatchRead() {
     ElMessage.success('已标记已读')
     selectedRows.value = []
     loadEvents()
+    alertStore.fetchPending()
   } catch (e) {
     ElMessage.error(e.message || '标记已读失败')
   }
