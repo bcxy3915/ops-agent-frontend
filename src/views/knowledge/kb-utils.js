@@ -18,6 +18,27 @@ export const STATUS_MAP = {
   EXPIRED: { label: '已失效风险', cls: 'kb-tag-danger' }
 }
 
+/**
+ * 索引发布状态：审核结论之外独立流转
+ * UNPUBLISHED=未入库 / BUILDING=入库中 / FAILED=入库失败 / PUBLISHED=已入库
+ */
+export const PUBLISH_STATUS_MAP = {
+  UNPUBLISHED: { label: '未入库', cls: 'kb-tag-info' },
+  BUILDING: { label: '入库中', cls: 'kb-tag-warning' },
+  FAILED: { label: '入库失败', cls: 'kb-tag-danger' },
+  PUBLISHED: { label: '已入库', cls: 'kb-tag-success' }
+}
+
+/** 索引发布状态文案 */
+export function publishLabel(v) {
+  return PUBLISH_STATUS_MAP[v]?.label || v || '-'
+}
+
+/** 索引发布状态 tag 样式 */
+export function publishCls(v) {
+  return PUBLISH_STATUS_MAP[v]?.cls || 'kb-tag-info'
+}
+
 /** 文档类型（文件格式） */
 export const DOCTYPE_MAP = {
   MARKDOWN: 'Markdown',

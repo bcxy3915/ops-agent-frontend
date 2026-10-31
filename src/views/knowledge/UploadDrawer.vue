@@ -140,7 +140,7 @@
     <div class="kb-up-pane" :class="{ hidden: step !== 4 }">
       <div class="kb-alert kb-alert-success" style="margin-bottom: 16px">
         <el-icon class="kb-alert-icon"><CircleCheckFilled /></el-icon>
-        <span>{{ files.length }} 个文件已准备就绪，发布后立即参与诊断检索（{{ form.publishMode === 'direct' ? '直接发布，无需审核' : '提交审核，通过后入库' }}）。</span>
+        <span>{{ files.length }} 个文件已准备就绪，发布后进入后台入库，完成后参与诊断检索（{{ form.publishMode === 'direct' ? '直接发布，无需审核' : '提交审核，通过后入库' }}）。</span>
       </div>
       <div class="kb-card" style="overflow: hidden">
         <div class="kb-card-bd">
@@ -152,7 +152,7 @@
             <span v-if="hasConflict" class="kb-tag" :class="decision === 'KEEP_OLD' ? 'kb-tag-info' : 'kb-tag-success'">{{ decisionLabel(decision) }}</span>
             <span v-else class="kb-tag kb-tag-success">无冲突</span>
             <span class="muted">脱敏</span><span>{{ sensitiveCount > 0 ? sensitiveCount + ' 个敏感信息项将脱敏' : '未检测到敏感信息' }}</span>
-            <span class="muted">状态</span><span class="kb-tag" :class="form.publishMode === 'direct' ? 'kb-tag-success' : 'kb-tag-warning'">{{ form.publishMode === 'direct' ? '将直接发布' : '待审核' }}</span>
+            <span class="muted">状态</span><span class="kb-tag" :class="form.publishMode === 'direct' ? 'kb-tag-success' : 'kb-tag-warning'">{{ form.publishMode === 'direct' ? '将直接发布并入库' : '待审核' }}</span>
           </div>
         </div>
       </div>
@@ -176,7 +176,7 @@ import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Document, Close, InfoFilled, Warning, WarningFilled, CircleCheckFilled
 } from '@element-plus/icons-vue'
-import { checkKnowledgeQuality, uploadKnowledgeDocument, publishKnowledgeDocument, submitKnowledgeDocument } from '@/api/knowledge'
+import { checkKnowledgeQuality, uploadKnowledgeDocument, publishDirectKnowledgeDocument, submitKnowledgeDocument } from '@/api/knowledge'
 import { listServices } from '@/api/service'
 import { useAuthStore } from '@/stores/auth'
 
@@ -188,8 +188,7 @@ const emit = defineEmits(['update:modelValue', 'published'])
 const auth = useAuthStore()
 const fileInput = ref(null)
 const canDirectPublish = computed(() =>
-  auth.hasPermission('knowledge:review')
-  || auth.hasPermission('knowledge:publish')
+  auth.hasPermission('knowledge:publish')
   || auth.hasPermission('knowledge:admin')
 )
 
@@ -362,6 +361,8 @@ async function publish() {
     const serviceIds = form.serviceIds.join(',')
 
     let publishedCount = 0
+    let failedCount = 0
+    let firstError = ''
     for (const f of files.value) {
       const fd = new FormData()
       fd.append('file', f.file)
@@ -376,13 +377,22 @@ async function publish() {
         await submitKnowledgeDocument(res.id)
       } else {
         try {
-          await publishKnowledgeDocument(res.id, { approved: true })
-        } catch (_) {
-          // 直接发布失败不阻断（文档仍保留待审核）
+          // 直接发布：跳过审核，后端置 APPROVED + BUILDING 并异步入库
+          await publishDirectKnowledgeDocument(res.id)
+        } catch (err) {
+          // 失败不阻断其余文件：文档保留为草稿，提示具体原因供用户重试
+          failedCount += 1
+          if (!firstError) firstError = err?.message || '未知原因'
         }
       }
     }
-    ElMessage.success(`已上传 ${publishedCount} 个文档${form.publishMode === 'review' ? '，等待审核' : '，审核状态请查看知识库'}`)
+    if (form.publishMode === 'review') {
+      ElMessage.success(`已上传 ${publishedCount} 个文档，等待审核`)
+    } else if (failedCount > 0) {
+      ElMessage.warning(`已上传 ${publishedCount} 个文档，其中 ${failedCount} 个直接发布失败：${firstError}。文档保留为待审核，可在文档列表提交审核`)
+    } else {
+      ElMessage.success(`已上传 ${publishedCount} 个文档，正在后台入库，进度请查看知识库文档列表`)
+    }
     window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
     emit('published')
     emit('update:modelValue', false)

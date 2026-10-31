@@ -30,7 +30,7 @@
       </el-select>
       <el-button @click="handleReset">重置</el-button>
       <div class="kb-filter-sp"></div>
-      <el-button v-if="canReload" :icon="Refresh" @click="handleReload">重建索引</el-button>
+      <el-button v-if="canReload" :icon="Refresh" @click="handleReload">重建内置知识</el-button>
       <el-button v-if="canWrite" @click="onlineVisible = true">在线编写</el-button>
       <el-button v-if="canWrite" type="primary" :icon="Plus" @click="$emit('open-upload')">上传知识</el-button>
     </div>
@@ -52,6 +52,18 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <span class="kb-tag" :class="statusCls(row.trustStatus)">{{ statusLabel(row.trustStatus) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="索引状态" width="120">
+          <template #default="{ row }">
+            <el-tooltip
+              v-if="row.publishStatus === 'FAILED'"
+              :content="row.publishError || '索引任务失败，可点击操作列重试入库'"
+              placement="top"
+            >
+              <span class="kb-tag" :class="publishCls(row.publishStatus)">{{ publishLabel(row.publishStatus) }}</span>
+            </el-tooltip>
+            <span v-else class="kb-tag" :class="publishCls(row.publishStatus)">{{ publishLabel(row.publishStatus) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="关联服务" width="130">
@@ -104,6 +116,11 @@
             <span><span class="kb-muted">标题：</span><b>{{ detail.title }}</b></span>
             <span><span class="kb-muted">层级：</span><span class="kb-tag" :class="layerCls(detail.layer)">{{ layerLabel(detail.layer) }}</span></span>
             <span><span class="kb-muted">状态：</span><span class="kb-tag" :class="statusCls(detail.trustStatus)">{{ statusLabel(detail.trustStatus) }}</span></span>
+            <span>
+              <span class="kb-muted">索引状态：</span>
+              <span class="kb-tag" :class="publishCls(detail.publishStatus)">{{ publishLabel(detail.publishStatus) }}</span>
+            </span>
+            <span v-if="detail.publishedAt"><span class="kb-muted">入库时间：</span>{{ formatDay(detail.publishedAt) }}</span>
             <span><span class="kb-muted">版本：</span>v{{ detail.version }}</span>
             <span><span class="kb-muted">类型：</span>{{ docTypeLabel(detail.docType) }}</span>
             <span><span class="kb-muted">负责人：</span>{{ detail.owner || '官方' }}</span>
@@ -114,6 +131,22 @@
             <span><span class="kb-muted">创建：</span>{{ formatDay(detail.createdAt) }}</span>
             <span><span class="kb-muted">更新：</span>{{ formatDay(detail.updatedAt) }}</span>
           </div>
+        </div>
+        <div v-if="detail.publishStatus === 'FAILED'" class="kb-detail-block">
+          <el-alert
+            type="error"
+            :closable="false"
+            show-icon
+            :title="`入库失败：${detail.publishError || '未知原因'}`"
+          />
+          <el-button
+            v-if="canWrite || canReview"
+            size="small"
+            type="primary"
+            plain
+            style="margin-top: 8px"
+            @click="reindexDoc(detail)"
+          >重试入库</el-button>
         </div>
         <div v-if="detail.rawContent" class="kb-detail-block">
           <div class="kb-detail-label">正文内容</div>
@@ -159,7 +192,11 @@
         </el-table-column>
         <el-table-column label="操作" width="90" align="right">
           <template #default="{ row }">
-            <button v-if="canWrite" class="kb-op-link" @click="doRollback(row)">回滚</button>
+            <button
+              v-if="canWrite && versionDoc?.publishStatus !== 'BUILDING'"
+              class="kb-op-link"
+              @click="doRollback(row)"
+            >回滚</button>
           </template>
         </el-table-column>
         <template #empty><el-empty description="暂无版本记录" :image-size="70" /></template>
@@ -174,7 +211,7 @@
         :closable="false"
         show-icon
         style="margin-bottom: 14px"
-        title="当前文档已发布：仅修改标题/标签等元数据不会影响线上版本；修改正文会下线当前版本并重新进入审核。"
+        title="当前文档已发布：仅修改标题/标签等元数据不会影响线上版本；修改正文会立即下线当前索引并重新进入审核。"
       />
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="标题" required>
@@ -237,17 +274,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh } from '@element-plus/icons-vue'
 import {
   listKnowledgeDocuments, getKnowledgeDocument, listDocumentHits, listDocumentVersions,
   updateKnowledgeDocument, deleteKnowledgeDocument, reviewKnowledgeDocument, submitKnowledgeDocument,
-  rollbackKnowledgeDocument, createKnowledgeOnline, reloadKnowledgeBase
+  rollbackKnowledgeDocument, createKnowledgeOnline, reloadKnowledgeBase,
+  getKnowledgeIndexStatus, reindexKnowledgeDocument
 } from '@/api/knowledge'
 import { listServices } from '@/api/service'
 import { useAuthStore } from '@/stores/auth'
-import { LAYER_MAP, STATUS_MAP, DOCTYPE_MAP, formatDay, fmtNumber } from './kb-utils'
+import {
+  LAYER_MAP, STATUS_MAP, DOCTYPE_MAP, formatDay, fmtNumber,
+  publishLabel, publishCls
+} from './kb-utils'
 
 const props = defineProps({
   tick: { type: Number, default: 0 }
@@ -263,8 +304,8 @@ const canReload = computed(() => auth.hasPermission('knowledge:admin'))
 async function handleReload() {
   try {
     await ElMessageBox.confirm(
-      '重建将重新索引全部知识文档（含案例），期间检索结果可能短暂不完整。该操作 5 分钟内最多 3 次，确定继续吗？',
-      '重建知识库索引',
+      '重建将重新索引全部内置知识文档（含案例），期间检索结果可能短暂不完整。该操作 5 分钟内最多 3 次。单篇入库失败请在文档操作列使用「重试入库」。确定继续吗？',
+      '重建内置知识',
       { type: 'warning', confirmButtonText: '重建', cancelButtonText: '取消' }
     )
     await reloadKnowledgeBase()
@@ -309,11 +350,62 @@ async function load() {
     rows.value = res.records || []
     pagination.total = Number(res.total || 0)
     collectServices(rows.value)
+    ensurePolling()
   } catch (e) {
     ElMessage.error(e.message || '加载文档失败')
   } finally {
     loading.value = false
   }
+}
+
+// ---- 入库进度轮询：仅对当前页 BUILDING 的文档逐个查询，全部落定后自动停止 ----
+let pollTimer = null
+const POLL_INTERVAL = 4000
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function collectBuildingTargets() {
+  const targets = rows.value.filter((r) => r.publishStatus === 'BUILDING')
+  if (detail.value?.publishStatus === 'BUILDING'
+      && !targets.some((r) => r.id === detail.value.id)) {
+    targets.push(detail.value)
+  }
+  return targets
+}
+
+function ensurePolling() {
+  if (pollTimer) return
+  if (!collectBuildingTargets().length) return
+  pollTimer = setInterval(async () => {
+    const pending = collectBuildingTargets()
+    if (!pending.length) {
+      stopPolling()
+      return
+    }
+    const results = await Promise.all(
+      pending.map((r) => getKnowledgeIndexStatus(r.id).catch(() => null))
+    )
+    results.forEach((res, i) => {
+      if (!res) return
+      const target = pending[i]
+      target.publishStatus = res.publishStatus
+      target.publishError = res.publishError
+      if (res.publishedAt) target.publishedAt = res.publishedAt
+      if (detail.value?.id === target.id) {
+        detail.value.publishStatus = res.publishStatus
+        detail.value.publishError = res.publishError
+        if (res.publishedAt) detail.value.publishedAt = res.publishedAt
+      }
+      if (res.publishStatus === 'FAILED') {
+        ElMessage.error(`「${target.title}」入库失败：${res.publishError || '未知原因'}，可在操作列重试`)
+      }
+    })
+  }, POLL_INTERVAL)
 }
 
 function collectServices(list) {
@@ -369,12 +461,16 @@ function opsFor(row) {
   const isOwner = !!auth.username && row.owner === auth.username
   const isDraft = ['DRAFT', 'REJECTED'].includes(reviewStatus)
   const isPending = ['PENDING_DEPT', 'PENDING_TENANT'].includes(reviewStatus)
+  // 入库中只允许只读操作，避免编辑/删除/重试与后台索引任务并发覆盖
+  const isBuilding = row.publishStatus === 'BUILDING'
   const ops = []
   ops.push({ key: 'view', label: isPending || isDraft ? '预览' : '查看', fn: viewDoc })
   if (status === 'VERIFIED' || row.layer === 'CASE') {
     ops.push({ key: 'hits', label: '检索命中', fn: viewHits })
   }
   ops.push({ key: 'versions', label: '更新日志', fn: viewVersions })
+  // 入库中 / 官方内置知识只允许只读操作
+  if (isBuilding || row.layer === 'BUILTIN') return ops
   // 作者提交审核；审核人不能是作者，审核入口只给有 review 权限且非作者的人
   if (isDraft && canWrite.value && isOwner) {
     ops.push({ key: 'submit', label: '提交审核', fn: submitDoc })
@@ -382,6 +478,9 @@ function opsFor(row) {
   if (isPending && canReview.value && !isOwner) {
     ops.push({ key: 'approve', label: '通过', fn: approveDoc })
     ops.push({ key: 'reject', label: '驳回', danger: true, fn: rejectDoc })
+  }
+  if (row.publishStatus === 'FAILED' && (canWrite.value || canReview.value)) {
+    ops.push({ key: 'reindex', label: '重试入库', fn: reindexDoc })
   }
   const canEditDoc = canWrite.value && (isOwner || auth.hasPermission('knowledge:admin'))
   if (canEditDoc && row.layer !== 'CASE') {
@@ -455,13 +554,39 @@ async function reviewDoc(row, approved, comment) {
   try {
     const level = row.reviewStatus === 'PENDING_TENANT' ? 'TENANT' : 'DEPT'
     await reviewKnowledgeDocument(row.id, { level, approved, comment })
-    ElMessage.success(approved ? '已通过审核' : '已驳回')
+    ElMessage.success(approved ? '审核已通过，正在后台入库，可在列表查看索引状态' : '已驳回')
     load()
     window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
   } catch (e) {
     ElMessage.error(e.message || '操作失败')
   }
 }
+/** 单篇文档重试入库（审核结论不变，仅重新执行索引任务） */
+async function reindexDoc(row) {
+  try {
+    await ElMessageBox.confirm(
+      `将重新构建「${row.title}」的向量索引，审核结论保持不变。确认重试？`,
+      '重试入库',
+      { type: 'warning', confirmButtonText: '重试', cancelButtonText: '取消' }
+    )
+  } catch (_) {
+    return
+  }
+  try {
+    await reindexKnowledgeDocument(row.id)
+    ElMessage.success('已重新入队，正在后台处理')
+    row.publishStatus = 'BUILDING'
+    row.publishError = null
+    if (detail.value && detail.value.id === row.id) {
+      detail.value.publishStatus = 'BUILDING'
+      detail.value.publishError = null
+    }
+    ensurePolling()
+  } catch (e) {
+    ElMessage.error(e.message || '重试入库失败')
+  }
+}
+
 async function deleteDoc(row) {
   try {
     await ElMessageBox.confirm(
@@ -513,6 +638,10 @@ const editForm = reactive({
 const editTagsText = ref('')
 
 async function openEdit(row) {
+  if (row.publishStatus === 'BUILDING') {
+    ElMessage.warning('文档正在后台入库，暂不可编辑')
+    return
+  }
   editForm.id = row.id
   editForm.title = row.title
   editForm.owner = row.owner || ''
@@ -615,6 +744,7 @@ onMounted(() => {
   load()
   loadServiceOptions()
 })
+onBeforeUnmount(stopPolling)
 watch(() => props.tick, () => load())
 </script>
 

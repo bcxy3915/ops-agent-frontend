@@ -44,7 +44,14 @@
                 <span v-if="serviceText(doc)">关联服务：{{ serviceText(doc) }}</span>
               </div>
             </div>
-            <span class="tag" :class="statusTag(doc.reviewStatus)">{{ statusLabel(doc.reviewStatus) }}</span>
+            <div style="display: flex; gap: 6px; align-items: center">
+              <span class="tag" :class="statusTag(doc.reviewStatus)">{{ statusLabel(doc.reviewStatus) }}</span>
+              <span
+                v-if="doc.reviewStatus === 'APPROVED'"
+                class="tag"
+                :class="publishTag(doc.publishStatus)"
+              >{{ publishLabel(doc.publishStatus) }}</span>
+            </div>
           </div>
 
           <div class="review-body">
@@ -107,6 +114,7 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listKnowledgeDocuments, getKnowledgeDocument, reviewKnowledgeDocument } from '@/api/knowledge'
 import { listDepts, getTenant } from '@/api/rbac'
+import { publishLabel } from './kb-utils'
 
 const authStore = useAuthStore()
 const tenantLabel = computed(() => authStore.tenantId === '0' ? '平台' : (authStore.tenantId || '当前企业'))
@@ -253,7 +261,7 @@ async function submitReview() {
       approved: reviewApproved.value,
       comment: comment.value.trim() || null,
     })
-    ElMessage.success(reviewApproved.value ? '审核已通过' : '已驳回')
+    ElMessage.success(reviewApproved.value ? '审核已通过，正在后台入库，可到文档列表查看进度' : '已驳回')
     reviewVisible.value = false
     await load()
     notifyReviewChanged()
@@ -292,6 +300,15 @@ function statusLabel(s) {
 
 function statusTag(s) {
   return s === 'PENDING_TENANT' ? 'tag-primary' : s === 'APPROVED' ? 'tag-success' : s === 'REJECTED' ? 'tag-danger' : 'tag-warning'
+}
+
+/** 索引发布状态 tag（审核通过后独立流转） */
+function publishTag(s) {
+  return {
+    BUILDING: 'tag-warning',
+    FAILED: 'tag-danger',
+    PUBLISHED: 'tag-success'
+  }[s] || 'tag-info'
 }
 
 function levelLabel(level) {

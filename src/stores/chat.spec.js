@@ -112,6 +112,69 @@ describe("chat store", () => {
     expect(chat.messages).toEqual([]);
   });
 
+  // ==================== restoreLatestConversation ====================
+
+  it("restoreLatestConversation：本地会话仍在列表时恢复该会话", async () => {
+    localStorage.setItem("ops_current_session", "s2");
+    setActivePinia(createPinia());
+    chatApi.listConversations.mockResolvedValueOnce([
+      { sessionId: "s1", title: "最新" },
+      { sessionId: "s2", title: "当前" },
+    ]);
+    chatApi.listMessages.mockResolvedValueOnce([
+      { id: 1, role: "user", content: "hi" },
+    ]);
+
+    const chat = useChatStore();
+    const restored = await chat.restoreLatestConversation();
+
+    expect(restored).toBe(true);
+    expect(chat.sessionId).toBe("s2");
+    expect(chat.messages).toHaveLength(1);
+    expect(chatApi.listMessages).toHaveBeenCalledWith("s2");
+  });
+
+  it("restoreLatestConversation：本地会话不存在时载入最近一条", async () => {
+    localStorage.setItem("ops_current_session", "sess-stale");
+    setActivePinia(createPinia());
+    chatApi.listConversations.mockResolvedValueOnce([
+      { sessionId: "latest", title: "最近" },
+      { sessionId: "older", title: "更早" },
+    ]);
+    chatApi.listMessages.mockResolvedValueOnce([
+      { id: 1, role: "user", content: "hi" },
+    ]);
+
+    const chat = useChatStore();
+    const restored = await chat.restoreLatestConversation();
+
+    expect(restored).toBe(true);
+    expect(chat.sessionId).toBe("latest");
+    expect(localStorage.getItem("ops_current_session")).toBe("latest");
+    expect(chatApi.listMessages).toHaveBeenCalledWith("latest");
+  });
+
+  it("restoreLatestConversation：无历史会话时保持空态", async () => {
+    chatApi.listConversations.mockResolvedValueOnce([]);
+    const chat = useChatStore();
+
+    const restored = await chat.restoreLatestConversation();
+
+    expect(restored).toBe(false);
+    expect(chat.messages).toEqual([]);
+    expect(chatApi.listMessages).not.toHaveBeenCalled();
+  });
+
+  it("restoreLatestConversation：已有消息时不覆盖当前对话", async () => {
+    const chat = useChatStore();
+    chat.messages = [{ id: "m1", role: "user", content: "进行中" }];
+
+    const restored = await chat.restoreLatestConversation();
+
+    expect(restored).toBe(false);
+    expect(chatApi.listConversations).not.toHaveBeenCalled();
+  });
+
   // ==================== refreshConversations ====================
 
   it("refreshConversations：更新会话列表", async () => {

@@ -133,14 +133,21 @@ const alertCtx = computed(() => {
   }
 })
 
-// 进入对话时：若带 q 且当前无消息，自动发送（附带告警上下文）
-onMounted(() => {
+// 进入对话时：若带 q 且当前无消息，自动发送（附带告警上下文）；否则恢复最近一次对话
+onMounted(async () => {
   const ctx = alertCtx.value
   if (ctx.id && ctx.q && chatStore.messages.length === 0) {
     const question = ctx.context
       ? `${ctx.q}\n\n【附带的告警上下文】\n${ctx.context}`
       : ctx.q
-    handleSend(question)
+    await handleSend(question)
+    return
+  }
+
+  // 首次进入 /chat：有历史记录则展示最近一条会话，没有则保持欢迎页
+  if (authStore.isLoggedIn) {
+    await chatStore.restoreLatestConversation()
+    scrollToBottom()
   }
 })
 

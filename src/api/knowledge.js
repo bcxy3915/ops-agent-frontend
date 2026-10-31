@@ -77,9 +77,17 @@ export async function submitKnowledgeDocument(id) {
   return request.post(`/knowledge/documents/${id}/submit`);
 }
 
-/** 发布审核（{ approved: true/false }） */
+/** 发布审核（{ approved: true/false }）；仅处理待审核文档 */
 export async function publishKnowledgeDocument(id, data) {
   return request.post(`/knowledge/documents/${id}/publish`, data);
+}
+
+/**
+ * 直接发布（管理员上传后跳过审核，立即置为已通过并进入后台入库）
+ * 仅对草稿/已驳回文档有效，需要 knowledge:publish 或 knowledge:admin
+ */
+export async function publishDirectKnowledgeDocument(id) {
+  return request.post(`/knowledge/documents/${id}/publish-direct`);
 }
 
 /** 分级审核（{ level: 'DEPT'|'TENANT', approved, comment }） */
@@ -90,6 +98,16 @@ export async function reviewKnowledgeDocument(id, data) {
 /** 自动超期判定 */
 export async function scanExpiredDocuments() {
   return request.post("/knowledge/documents/expire-scan");
+}
+
+/** 查询单篇文档索引状态（供前端轮询入库进度） */
+export async function getKnowledgeIndexStatus(id) {
+  return request.get(`/knowledge/documents/${id}/index-status`);
+}
+
+/** 重建单篇文档索引（仅已发布/入库失败的文档可重试，不改变审核结论） */
+export async function reindexKnowledgeDocument(id) {
+  return request.post(`/knowledge/documents/${id}/reindex`);
 }
 
 // ==================== 版本（只读查询所有角色；回滚需 ADMIN/OPERATOR） ====================
