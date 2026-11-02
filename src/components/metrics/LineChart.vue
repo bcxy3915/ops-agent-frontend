@@ -99,7 +99,8 @@ function initChart() {
 
 function updateData() {
     if (!chart) return
-    const seriesData = props.data.map((d) => [new Date(d.time).getTime(), d.value])
+    // 后端 MetricPoint 字段为 timestamp（毫秒）；兼容旧格式 time
+    const seriesData = props.data.map((d) => [Number(d.timestamp ?? d.time), d.value])
     chart.setOption({
         series: [{ data: seriesData }]
     })
