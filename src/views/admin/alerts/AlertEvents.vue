@@ -512,7 +512,7 @@ async function handleClaim(row) {
     await claimAlertEvent(row.id)
     ElMessage.success(`已认领告警，当前处置人 @${auth.username}`)
     loadEvents()
-    alertStore.fetchSummary()
+    loadSummary()
   } catch (e) {
     ElMessage.error(e.message || '认领失败')
   }
@@ -529,7 +529,7 @@ async function handleTakeover(row) {
     await claimAlertEvent(row.id)
     ElMessage.success(`已接管，当前处置人 @${auth.username}`)
     loadEvents()
-    alertStore.fetchSummary()
+    loadSummary()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
   }
@@ -541,7 +541,7 @@ async function handleAck(row) {
     await acknowledgeAlertEvent(row.id)
     ElMessage.success(`已确认，处置人 @${auth.username}`)
     loadEvents()
-    alertStore.fetchSummary()
+    loadSummary()
   } catch (e) {
     ElMessage.error(e.message || '确认失败')
   }
@@ -561,7 +561,7 @@ async function doResolve() {
     ElMessage.success('已标记恢复')
     resolveVisible.value = false
     loadEvents()
-    alertStore.fetchSummary()
+    loadSummary()
   } catch (e) {
     ElMessage.error(e.message || '标记恢复失败')
   } finally {
@@ -698,7 +698,7 @@ async function handleBatchAck() {
     ElMessage.success(`已确认 ${ok} 条${skipped > 0 ? `，跳过已恢复 ${skipped} 条` : ''}`)
     selectedRows.value = []
     loadEvents()
-    alertStore.fetchSummary()
+    loadSummary()
   } catch (e) {
     if (e && e.message) ElMessage.error(e.message)
   } finally {

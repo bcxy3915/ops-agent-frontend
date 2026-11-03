@@ -74,7 +74,7 @@
             <div class="al-flow-node" :class="{ active: isAcked }"><span class="al-flow-dot">✓</span>处置</div>
             <span class="al-flow-line"></span>
             <div class="al-flow-node" :class="{ active: event.status === 'RESOLVED' }">
-              <span class="al-flow-dot">…</span>恢复 / 沉淀
+              <span class="al-flow-dot">{{ event.status === 'RESOLVED' ? '✓' : '…' }}</span>恢复 / 沉淀
             </div>
           </div>
 
@@ -209,7 +209,7 @@
                   <el-icon color="var(--primary)"><Camera /></el-icon>
                   故障快照（告警瞬间现场）
                 </div>
-                <span v-if="snapshot" class="al-muted">采集于 {{ fmtTime(snapshot.createdAt) }} · snapshot #{{ snapshot.id }}</span>
+                <span v-if="snapshot" class="al-muted">采集于 {{ fmtTime(snapshot.createdAt || snapshotData?.capturedAt) }} · snapshot #{{ snapshot.id }}</span>
               </div>
               <div class="al-card-bd">
                 <div v-if="snapshotData" class="al-snap-grid">
