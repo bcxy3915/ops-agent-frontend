@@ -21,7 +21,7 @@
                   :content="`已升级至 L${event.escalationLevel}（${fmtTime(event.escalatedAt)}）`" placement="top">
                   <span class="al-escalated">已升级</span>
                 </el-tooltip>
-                <el-tag v-if="diag" size="small" type="success" effect="light">AI 已诊断</el-tag>
+                <el-tag v-if="diag" size="small" :type="diagSucceeded ? 'success' : 'danger'" effect="light">{{ diagSucceeded ? 'AI 已诊断' : 'AI 诊断失败' }}</el-tag>
               </h3>
               <div class="al-head-meta">
                 <span>规则：{{ event.ruleName || '-' }}</span>
@@ -69,7 +69,7 @@
             <span class="al-flow-line"></span>
             <div class="al-flow-node" :class="{ active: snapshot }"><span class="al-flow-dot">✓</span>快照</div>
             <span class="al-flow-line"></span>
-            <div class="al-flow-node" :class="{ active: diag }"><span class="al-flow-dot">✓</span>诊断</div>
+            <div class="al-flow-node" :class="{ active: diagSucceeded }"><span class="al-flow-dot">{{ diagSucceeded ? '✓' : (diag ? '!' : '…') }}</span>诊断</div>
             <span class="al-flow-line"></span>
             <div class="al-flow-node" :class="{ active: isAcked }"><span class="al-flow-dot">✓</span>处置</div>
             <span class="al-flow-line"></span>
@@ -108,10 +108,10 @@
                   <el-icon color="var(--teal)"><Cpu /></el-icon>
                   AI 智能诊断
                 </div>
-                <span v-if="diag" class="al-conf-tag" :class="confCls(diag.confidence)">置信度 {{ diag.confidence || 0 }}%</span>
+                <span v-if="diagSucceeded" class="al-conf-tag" :class="confCls(diag.confidence)">置信度 {{ diag.confidence || 0 }}%</span>
               </div>
               <div class="al-card-bd">
-                <div v-if="diag">
+                <div v-if="diagSucceeded">
                   <div class="al-diag-headline">
                     <div class="al-score-ring" :style="{ '--pct': diag.confidence || 0, '--ring': confColor(diag.confidence) }">
                       <span>{{ diag.confidence || 0 }}%</span>
@@ -196,8 +196,9 @@
                       @click="handleAck">采纳并确认告警</el-button>
                   </div>
                 </div>
-                <el-empty v-else description="暂无 AI 诊断" :image-size="80">
-                  <el-button v-if="canWrite && snapshot" :loading="diagLoading" @click="handleTriggerDiag">基于快照触发诊断</el-button>
+                <el-empty v-else :description="diag ? 'AI 诊断失败，可基于原始快照重试' : '暂无 AI 诊断'" :image-size="80">
+                  <div v-if="diag?.errorMessage" class="al-err">{{ diag.errorMessage }}</div>
+                  <el-button v-if="canWrite && snapshot" :loading="diagLoading" @click="handleTriggerDiag">{{ diag ? '重试 AI 诊断' : '基于快照触发诊断' }}</el-button>
                 </el-empty>
               </div>
             </div>
@@ -264,9 +265,9 @@
                   </div>
                   <!-- AI 诊断 -->
                   <div v-if="diag" class="al-tl-item">
-                    <span class="al-tl-dot ok"></span>
+                    <span class="al-tl-dot" :class="diagSucceeded ? 'ok' : 'fail'"></span>
                     <div class="al-tl-t">AI 自动诊断</div>
-                    <div class="al-tl-d">生成根因 / 证据 / 建议（置信度 {{ diag.confidence || 0 }}%）</div>
+                    <div class="al-tl-d">{{ diagSucceeded ? `生成根因 / 证据 / 建议（置信度 ${diag.confidence || 0}%）` : '诊断失败，尚未生成有效根因' }}</div>
                     <div class="al-tl-time">{{ fmtTime(diag.createdAt) }}</div>
                   </div>
                   <!-- 认领（独立认领或确认自动认领） -->
@@ -463,6 +464,7 @@ const silenceLoading = ref(false)
 const silenceForm = ref({ reason: '', untilType: '1h', untilCustom: null, note: '' })
 
 const isAcked = computed(() => event.value && event.value.status === 'ACKNOWLEDGED')
+const diagSucceeded = computed(() => diag.value?.status === 'SUCCESS' && !diag.value?.question)
 
 const STATUS_LABEL = { FIRING: '待处理', SILENCED: '静默', ACKNOWLEDGED: '已确认', RESOLVED: '已恢复' }
 const STATUS_TAG = { FIRING: 'danger', SILENCED: 'warning', ACKNOWLEDGED: 'info', RESOLVED: 'success' }
@@ -533,7 +535,7 @@ async function load() {
 
     // 2. 诊断
     const diags = (await listDiagnoses({ alertEventId: Number(eventId), limit: 10 })) || []
-    diag.value = diags.find((d) => d.status !== 'FAILED' && !d.question) || diags.find((d) => d.status !== 'FAILED') || diags[0] || null
+    diag.value = diags.find((d) => d.status === 'SUCCESS' && !d.question) || diags.find((d) => !d.question) || null
     // P1 规格 3.1：追问记录（question 非空），按时间正序展示
     followUps.value = diags.filter((d) => d.question && d.answer).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
 
@@ -724,9 +726,13 @@ async function doSilence() {
 async function handleTriggerDiag() {
   diagLoading.value = true
   try {
-    await triggerDiagnosis(snapshot.value.id)
-    ElMessage.success('诊断已触发')
-    load()
+    const result = await triggerDiagnosis(snapshot.value.id)
+    if (result?.status === 'FAILED') {
+      ElMessage.error('诊断失败，请查看失败原因后重试')
+    } else {
+      ElMessage.success('诊断已完成')
+    }
+    await load()
   } catch (e) {
     ElMessage.error(e.message || '触发诊断失败')
   } finally {

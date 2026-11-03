@@ -10,6 +10,10 @@
       </button>
     </div>
 
+    <div v-if="mode === 'pending' && canWrite && cards.length > 0" style="margin-bottom: 16px">
+      <el-button type="primary" :icon="MagicStick" :loading="generating" @click="doGenerate">自动生成案例候选</el-button>
+    </div>
+
     <div v-loading="loading">
       <!-- 空态 -->
       <div v-if="!loading && cards.length === 0" class="kb-card" style="padding: 40px 20px">
