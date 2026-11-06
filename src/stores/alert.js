@@ -1,15 +1,17 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { listAlertEvents, getUnreadAlertCount, markAllAlertEventsRead } from "@/api/alerts";
+import { listAlertEvents, getUnreadAlertCount, markAllAlertEventsRead, getAlertSummary } from "@/api/alerts";
 
 /**
- * 告警铃铛数据源（P0：已读持久化）
+ * 告警数据源（P0：已读持久化）
  * - pendingCount：当前用户未读告警数（后端 /unread-count，口径 FIRING/ACK/SILENCED 且未读，规格 1.2）
+ * - openCount：待处理告警数（全局口径 FIRING/ACK/SILENCED，菜单徽标用）
  * - recentList：最近待处理告警（默认 20 条），用于 popover 列表
- * - 轮询：页面可见时 30s 一次；不可见时停止（由 AlertBell 组件驱动）
+ * - 轮询：页面可见时 30s 一次；不可见时停止（由 AlertBell / AdminLayout 组件驱动）
  */
 export const useAlertStore = defineStore("alert", () => {
   const pendingCount = ref(0);
+  const openCount = ref(0);
   const recentList = ref([]);
   const loading = ref(false);
   const lastFetchedAt = ref(0);
@@ -56,12 +58,24 @@ export const useAlertStore = defineStore("alert", () => {
     pendingCount.value = 0;
   }
 
+  /** 拉取待处理告警数（FIRING/ACK/SILENCED），菜单徽标数据源 */
+  async function fetchSummary() {
+    try {
+      const s = await getAlertSummary();
+      openCount.value = (s && s.openCount) || 0;
+    } catch (e) {
+      // 拉取失败静默，保持旧值
+    }
+  }
+
   return {
     pendingCount,
+    openCount,
     recentList,
     loading,
     hasPending,
     fetchPending,
     markAllRead,
+    fetchSummary,
   };
 });

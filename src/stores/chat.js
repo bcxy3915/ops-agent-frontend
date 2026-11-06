@@ -106,6 +106,29 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
+   * 进入对话页时恢复上下文（仅在当前无消息时执行）：
+   *   - 优先恢复 localStorage 里的会话（须仍存在于历史列表）
+   *   - 否则打开最近一条会话（列表按 lastActiveAt 倒序）
+   *   - 没有历史会话时保持空态，由欢迎页展示
+   * @returns {Promise<boolean>} 是否恢复了历史消息
+   */
+  async function restoreLatestConversation() {
+    if (messages.value.length > 0) return false;
+
+    await refreshConversations();
+    const list = Array.isArray(conversations.value) ? conversations.value : [];
+    if (list.length === 0) return false;
+
+    const stored = sessionId.value;
+    const hasStored = stored && list.some((c) => c.sessionId === stored);
+    const target = hasStored ? stored : list[0]?.sessionId;
+    if (!target) return false;
+
+    await loadConversation(target);
+    return messages.value.length > 0;
+  }
+
+  /**
    * 刷新会话列表（侧边栏用）
    */
   async function refreshConversations() {
@@ -237,6 +260,7 @@ export const useChatStore = defineStore("chat", () => {
     clearMessages,
     newConversation,
     loadConversation,
+    restoreLatestConversation,
     refreshConversations,
     removeConversation,
   };

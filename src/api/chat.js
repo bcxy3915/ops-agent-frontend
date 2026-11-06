@@ -40,19 +40,18 @@ function handle401() {
 export function askStream(sessionId, question, { onChunk, onDone, onError, onCitations }) {
   const authStore = useAuthStore();
 
-  const url = `/api/ops/ask/stream?question=${encodeURIComponent(
-    question
-  )}&sessionId=${encodeURIComponent(sessionId)}`;
-
   const controller = new AbortController();
   let stopped = false;
 
-  fetch(url, {
-    method: "GET",
+  // 长文本（如告警上下文）走 POST body：中文 URL 编码后膨胀 9 倍，拼 query 会撑爆请求头
+  fetch("/api/ops/ask/stream", {
+    method: "POST",
     headers: {
       Accept: "text/event-stream",
+      "Content-Type": "application/json",
       Authorization: `Bearer ${authStore.token}`,
     },
+    body: JSON.stringify({ question, sessionId }),
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -81,21 +80,23 @@ export function askStream(sessionId, question, { onChunk, onDone, onError, onCit
 
         buffer += decoder.decode(value, { stream: true });
 
-        const events = buffer.split("\n\n");
+        const events = buffer.split(/\r?\n\r?\n/);
         buffer = events.pop() || "";
 
         for (const event of events) {
-          const lines = event.split("\n");
+          const lines = event.split(/\r?\n/);
           // SSE 事件名：默认 message 事件（答案 token），首个事件为 citations
           let eventName = "";
-          let dataStr = "";
+          const dataLines = [];
           for (const line of lines) {
             if (line.startsWith("event:")) {
               eventName = line.slice(6).trim();
             } else if (line.startsWith("data:")) {
-              dataStr += (dataStr ? "\n" : "") + line.slice(5).trim();
+              const value = line.slice(5);
+              dataLines.push(value.startsWith(" ") ? value.slice(1) : value);
             }
           }
+          const dataStr = dataLines.join("\n");
 
           if (!dataStr) continue;
 

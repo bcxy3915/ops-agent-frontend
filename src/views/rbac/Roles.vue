@@ -23,7 +23,7 @@
           </div>
           <div class="role-list">
             <div v-for="r in roles" :key="r.id" class="role-item"
-              :class="{ active: activeRoleId === r.id }" @click="activeRoleId = r.id">
+              :class="{ active: activeRoleId === r.id }" @click="selectRole(r)">
               <div class="role-main">
                 <div class="role-name">
                   {{ r.name }}
@@ -40,14 +40,15 @@
         <div class="rbac-card matrix-panel">
           <div class="card-hd">
             <div class="card-title">角色 · 权限点矩阵</div>
-            <span class="tag tag-warning">
-              {{ activeRole ? activeRole.name : '' }} 已选 {{ activeCount }}/{{ permissions.length }} 项
-            </span>
-            <span v-if="activeRole && activeRole.scope === 'PLATFORM'" class="tag tag-info">平台角色只读</span>
+            <div class="card-tools">
+              <span class="tag tag-warning">
+                {{ activeRole ? activeRole.name : '' }} 已选 {{ activeCount }}/{{ permissions.length }} 项
+              </span>
+            </div>
           </div>
 
-          <div class="matrix-wrap">
-            <table class="matrix">
+          <div ref="matrixWrapRef" class="matrix-wrap">
+            <table class="matrix" :style="{ width: matrixWidth + 'px' }">
               <thead>
                 <tr>
                   <th class="module-col">模块</th>
@@ -80,7 +81,7 @@
 
           <div class="card-ft">
             <span class="muted small">
-              勾选多个角色可横向对比；保存时只提交有变更的角色。权限缓存 5 分钟内失效。
+              仅显示当前角色已授权的模块；保存时只提交有变更的角色。权限缓存 5 分钟内失效。
             </span>
             <el-button type="primary" size="small" :loading="saving" @click="save">保存</el-button>
           </div>
@@ -91,7 +92,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -114,13 +115,49 @@ const originals = reactive({})
 const activeRoleId = ref(null)
 const loading = ref(false)
 const saving = ref(false)
+const matrixWrapRef = ref(null)
+
+/**
+ * 切换角色。
+ *
+ * 矩阵行会随角色变化，必须把滚动位置重置到顶部，
+ * 否则会保留上一个角色的纵向滚动位置，导致第一组模块被顶出可视区。
+ *
+ * @param {object} role 角色
+ */
+function selectRole(role) {
+  activeRoleId.value = role.id
+  nextTick(() => {
+    const wrap = matrixWrapRef.value
+    if (!wrap) return
+    wrap.scrollTop = 0
+    wrap.scrollLeft = 0
+  })
+}
 
 const matrixRoles = computed(() => {
   const editable = roles.value.filter((r) => r.scope !== 'PLATFORM')
+  const active = roles.value.find((r) => r.id === activeRoleId.value)
+  // 选中平台管理员时把平台列也显示出来，便于维护平台角色权限
+  if (active && active.scope === 'PLATFORM') {
+    const platform = roles.value.find((r) => r.scope === 'PLATFORM')
+    if (platform) editable.push(platform)
+  }
   return editable.length ? editable : roles.value
 })
+const matrixWidth = computed(() => 90 + 330 + 120 * matrixRoles.value.length)
 const activeRole = computed(() => roles.value.find((r) => r.id === activeRoleId.value) || null)
 const activeCount = computed(() => (rolePerms[activeRoleId.value] || []).length)
+
+// 当前角色已授权的模块：切换角色时矩阵只展示这些模块
+const activeModuleSet = computed(() => {
+  const ids = new Set(rolePerms[activeRoleId.value] || [])
+  const modules = new Set()
+  permissions.value.forEach((p) => {
+    if (ids.has(p.id)) modules.add(p.module)
+  })
+  return modules
+})
 
 const permissionGroups = computed(() => {
   const map = new Map()
@@ -129,7 +166,7 @@ const permissionGroups = computed(() => {
     if (!map.has(module)) map.set(module, [])
     map.get(module).push(p)
   })
-  return Array.from(map.entries())
+  const groups = Array.from(map.entries())
     .sort((a, b) => {
       const ai = MODULE_ORDER.indexOf(a[0])
       const bi = MODULE_ORDER.indexOf(b[0])
@@ -140,6 +177,8 @@ const permissionGroups = computed(() => {
       label: MODULE_LABELS[module] || module,
       items,
     }))
+  // 只展示当前角色有权限的模块
+  return groups.filter((group) => activeModuleSet.value.has(group.module))
 })
 
 onMounted(load)
@@ -173,7 +212,7 @@ async function load() {
 }
 
 async function save() {
-  const changed = matrixRoles.value.filter((role) => {
+  const changed = roles.value.filter((role) => {
     const now = (rolePerms[role.id] || []).slice().sort((a, b) => a - b)
     const old = (originals[role.id] || []).slice().sort((a, b) => a - b)
     return now.length !== old.length || now.some((id, i) => id !== old[i])
@@ -226,16 +265,21 @@ function scopeTag(scope) {
 .sub { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 8px; }
 .header-actions { display: flex; gap: 8px; align-items: center; }
 .pill { padding: 3px 10px; border-radius: 12px; font-size: 12px; background: var(--primary-light); color: var(--primary); }
-.rbac-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.rbac-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 20px 24px; }
 .alert-info {
   display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; margin-bottom: 16px;
   background: rgba(219,234,254,.4); border-radius: 8px; font-size: 12.5px; color: var(--primary); line-height: 1.6;
+  flex-shrink: 0;
 }
-.split { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
-.rbac-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--card-shadow); overflow: hidden; }
-.card-hd { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-light); }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.rbac-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow); overflow: hidden; display: flex; flex-direction: column; min-height: 0;
+}
+.card-hd { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
 .card-title { font-size: 14px; font-weight: 600; }
-.role-list { padding: 8px; }
+.card-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.role-list { padding: 8px; flex: 1; min-height: 0; overflow-y: auto; }
 .role-item { display: flex; align-items: center; gap: 8px; padding: 11px 12px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
 .role-item:hover { background: var(--bg-hover); }
 .role-item.active { background: var(--bg-selected); border-color: #BFDBFE; }
@@ -243,16 +287,28 @@ function scopeTag(scope) {
 .role-name { font-size: 13.5px; font-weight: 600; }
 .role-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .role-scope { font-size: 11.5px; color: var(--text-muted); }
-.matrix-wrap { overflow-x: auto; padding: 0 12px; }
+.matrix-wrap { flex: 1; min-height: 0; overflow: auto; padding: 0 12px; overscroll-behavior: contain; }
 .matrix {
   width: 900px;
   min-width: 900px;
   margin: 0 auto;
   table-layout: fixed;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 13px;
 }
-.matrix th { font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: 10px; border-bottom: 1px solid var(--border-light); background: rgba(248,250,252,.6); text-align: left; }
+.matrix th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 10px;
+  background: #F8FAFC;
+  box-shadow: inset 0 -1px 0 var(--border-light);
+  text-align: left;
+}
 .matrix th.module-col { width: 90px; text-align: center; }
 .matrix th.perm-col { width: 330px; }
 .matrix th.role-col { width: 120px; text-align: center; }
@@ -263,7 +319,7 @@ function scopeTag(scope) {
 .perm-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .perm-name { font-size: 13px; }
 .perm-code { margin-left: 10px; color: var(--text-muted); font-size: 11px; }
-.card-ft { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--border-light); }
+.card-ft { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--border-light); flex-shrink: 0; background: rgba(255,255,255,.92); }
 .muted { color: var(--text-muted); }
 .small { font-size: 12px; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 500; }

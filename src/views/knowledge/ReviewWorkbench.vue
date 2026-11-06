@@ -44,7 +44,14 @@
                 <span v-if="serviceText(doc)">关联服务：{{ serviceText(doc) }}</span>
               </div>
             </div>
-            <span class="tag" :class="statusTag(doc.reviewStatus)">{{ statusLabel(doc.reviewStatus) }}</span>
+            <div style="display: flex; gap: 6px; align-items: center">
+              <span class="tag" :class="statusTag(doc.reviewStatus)">{{ statusLabel(doc.reviewStatus) }}</span>
+              <span
+                v-if="doc.reviewStatus === 'APPROVED'"
+                class="tag"
+                :class="publishTag(doc.publishStatus)"
+              >{{ publishLabel(doc.publishStatus) }}</span>
+            </div>
           </div>
 
           <div class="review-body">
@@ -107,6 +114,7 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listKnowledgeDocuments, getKnowledgeDocument, reviewKnowledgeDocument } from '@/api/knowledge'
 import { listDepts, getTenant } from '@/api/rbac'
+import { publishLabel } from './kb-utils'
 
 const authStore = useAuthStore()
 const tenantLabel = computed(() => authStore.tenantId === '0' ? '平台' : (authStore.tenantId || '当前企业'))
@@ -131,8 +139,9 @@ const currentList = computed(() => {
 const todayReviewed = computed(() => {
   const today = new Date()
   return doneDocs.value.filter((d) => {
-    if (!d.reviewedAt) return false
-    const t = new Date(d.reviewedAt)
+    const iso = myReviewTime(d)
+    if (!iso) return false
+    const t = new Date(iso)
     return t.getFullYear() === today.getFullYear() && t.getMonth() === today.getMonth() && t.getDate() === today.getDate()
   }).length
 })
@@ -182,10 +191,18 @@ async function load() {
       listKnowledgeDocuments({ trustStatus: 'PENDING', page: 1, size: 100 }),
       listKnowledgeDocuments({ trustStatus: 'VERIFIED', page: 1, size: 100 }),
     ])
-    pendingDocs.value = (pending.records || []).filter(
-      (d) => d.reviewStatus === 'PENDING_DEPT' || d.reviewStatus === 'PENDING_TENANT')
-    doneDocs.value = (verified.records || []).filter(
-      (d) => d.reviewedBy && d.reviewedBy === authStore.username)
+    const pendingRecords = pending.records || []
+    const verifiedRecords = verified.records || []
+    pendingDocs.value = pendingRecords.filter((d) =>
+      (d.reviewStatus === 'PENDING_DEPT' || d.reviewStatus === 'PENDING_TENANT')
+      && !isReviewedByMe(d))
+    // “我已审核”需要包含：部门已通过、待企业审核；企业已通过；已驳回
+    const done = [...pendingRecords, ...verifiedRecords].filter((d) =>
+      isReviewedByMe(d) && ['PENDING_TENANT', 'APPROVED', 'REJECTED'].includes(d.reviewStatus))
+    const unique = new Map()
+    done.forEach((d) => { if (!unique.has(d.id)) unique.set(d.id, d) })
+    doneDocs.value = [...unique.values()].sort((a, b) =>
+      new Date(myReviewTime(b) || 0) - new Date(myReviewTime(a) || 0))
   } catch (e) {
     ElMessage.error(e.message || '加载审核列表失败')
     pendingDocs.value = []
@@ -193,6 +210,22 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function isReviewedByMe(doc) {
+  return (doc.reviewedBy && doc.reviewedBy === authStore.username)
+    || (doc.deptReviewedBy && doc.deptReviewedBy === authStore.username)
+}
+
+function myReviewTime(doc) {
+  const times = []
+  if (doc.reviewedBy && doc.reviewedBy === authStore.username && doc.reviewedAt) times.push(doc.reviewedAt)
+  if (doc.deptReviewedBy && doc.deptReviewedBy === authStore.username && doc.deptReviewedAt) times.push(doc.deptReviewedAt)
+  return times.sort().at(-1) || doc.reviewedAt || doc.deptReviewedAt || null
+}
+
+function notifyReviewChanged() {
+  window.dispatchEvent(new CustomEvent('knowledge-review-updated'))
 }
 
 async function preview(doc) {
@@ -228,9 +261,10 @@ async function submitReview() {
       approved: reviewApproved.value,
       comment: comment.value.trim() || null,
     })
-    ElMessage.success(reviewApproved.value ? '审核已通过' : '已驳回')
+    ElMessage.success(reviewApproved.value ? '审核已通过，正在后台入库，可到文档列表查看进度' : '已驳回')
     reviewVisible.value = false
-    load()
+    await load()
+    notifyReviewChanged()
   } catch (e) {
     ElMessage.error(e.message || '审核失败')
   } finally {
@@ -266,6 +300,15 @@ function statusLabel(s) {
 
 function statusTag(s) {
   return s === 'PENDING_TENANT' ? 'tag-primary' : s === 'APPROVED' ? 'tag-success' : s === 'REJECTED' ? 'tag-danger' : 'tag-warning'
+}
+
+/** 索引发布状态 tag（审核通过后独立流转） */
+function publishTag(s) {
+  return {
+    BUILDING: 'tag-warning',
+    FAILED: 'tag-danger',
+    PUBLISHED: 'tag-success'
+  }[s] || 'tag-info'
 }
 
 function levelLabel(level) {

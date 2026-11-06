@@ -33,7 +33,7 @@
 
             <el-form-item label="角色" prop="roleIds">
                 <el-select v-model="form.roleIds" multiple style="width: 100%" placeholder="选择角色">
-                    <el-option v-for="r in roles" :key="r.id" :label="`${r.name}（${r.code}）`" :value="r.id" />
+                    <el-option v-for="r in roleOptions" :key="r.id" :label="`${r.name}（${r.code}）`" :value="r.id" />
                 </el-select>
                 <div class="form-hint">角色决定菜单与操作权限，可多选</div>
             </el-form-item>
@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { listDepts, listRoles, listTenants } from '@/api/rbac'
@@ -81,6 +81,12 @@ const formRef = ref(null)
 const submitting = ref(false)
 
 const roles = ref([])
+const roleOptions = computed(() => {
+    if (authStore.isPlatformAdmin) return roles.value
+    if (authStore.isTenantAdmin) return roles.value.filter((r) => r.code !== 'PLATFORM_ADMIN')
+    // 部门管理员只能分配部门级角色
+    return roles.value.filter((r) => r.scope === 'DEPT')
+})
 const tenants = ref([])
 const depts = ref([])
 const deptTree = ref([])

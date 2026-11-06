@@ -33,9 +33,6 @@ function clearAuthStorage() {
 const request = axios.create({
   baseURL: "/api",
   timeout: 60000, // LLM 调用可能较慢，设 60 秒
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 // ========== 请求拦截器 ==========
