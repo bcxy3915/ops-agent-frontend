@@ -1,189 +1,184 @@
-![Frontend CI](https://github.com/bcxy3915/ops-agent-frontend/actions/workflows/ci.yml/badge.svg)
-
 # Ops Agent Frontend
 
-> 面向运维场景的 AI 智能体前端 —— 用对话替代命令行，把「排查故障」变成「问一句话」。
-> 集成 AI 诊断、告警闭环、知识库沉淀与可观测面板，一套界面串起从告警触发到经验沉淀的完整链路。
+面向运维场景的 Vue 3 前端，提供 AI 对话、服务与指标、告警诊断、知识库、通知及权限管理。后续围绕“诊断 → 计划 → 授权 → 执行 → 验证”建设可追踪的自动运维交互。
 
----
+## 分支定位与开发依据
 
-## ✨ 功能亮点
+当前分支为 `feature/agent-workflow`，用于后续 Agent 工作流和自动运维功能开发。前端通过业务 API 对接后端，不绑定 Spring AI 或 LangChain4j 类型；后端框架迁移初期优先保持现有接口兼容。
 
-**对话工作台**
+后续功能依据后端《运维智能体后端开发周计划 v4》（2026-11-03）及 v4 架构分析梳理。原计划位于同级后端项目：
 
-- 🤖 **AI 对话排障**：基于 SSE 流式输出，实时展示思考过程（ReasoningBlock）、工具调用（ToolCallCard）与最终回答
-- 📚 **回答可溯源**：回答下方附带知识来源引用，混合检索结果可视化，点开即可查看原文片段
-- 🔗 **告警上下文带入对话**：从告警详情一键跳转对话追问，URL 携带 `ref=alert:{id}`，对话顶部自动挂载告警上下文卡片（含「查看详情 / 退出上下文」）
-- 💬 **会话管理**：会话按「今天 / 昨天 / 更早」分组，支持重命名、删除、查看全部历史
+- `ops-ai-agent/docs/design/future/运维智能体后端开发周计划-v4-20261103.md`
+- `ops-ai-agent/docs/design/future/v4/future-自动运维架构与LangChain4j迁移评估-v4-20261103.md`
 
-**管理控制台**（分组导航：监控运维 / 知识库 / 系统设置）
+下文 W1–W30 是原计划的**后端相对周次与依赖顺序**，不是前端工期承诺。原计划未包含完整前端实现；新增页面需随接口契约另行排期。
 
-- 📊 **管理首页统计卡**：待处理告警、待沉淀案例、本月知识命中、知识文档总量，整卡可点直达对应页面
-- 🚨 **告警中心**：告警事件列表 + 详情，完整状态机操作（确认 / 静默 / 恢复 / 认领 / 升级），支持批量确认与批量静默
-- 🔔 **告警铃铛**：顶栏实时未读红点 + 摇动脉冲，点击弹出最近告警，支持「标记全部已读」（已读状态持久化）
-- 🧭 **告警详情闭环**：AI 智能诊断（置信度、推断根因、证据、建议处置）+ 参考知识溯源 + 故障快照 + 通知记录 + 处置时间线 + 内嵌追问 AI
-- 🛠 **服务与指标**：服务卡片管理、健康状态徽标、ECharts 指标趋势图
-- 🗂 **知识库**：文档上传、案例沉淀（支持修正根因/处置）、检索测试，含概览 / 文档 / 案例 / 检索四个 Tab
-- 🧱 **维护窗口**：按服务维度批量静默，维护期内新告警落库但不通知、不升级
-- 👥 **值班管理**：主 / 备值班人配置，与告警升级联动（首报→主值班，L1→备值班，L2→ADMIN）
-- 📋 **告警规则**：规则维护、节流配置、通知渠道绑定、多级升级策略
-- 📮 **通知渠道**：邮件 / 飞书 / Webhook 渠道配置与测试
-- 🔐 **审计日志 & 用户管理**：操作留痕，用户角色与启用状态管理
+## 已有功能
 
-**工程能力**
+以下按当前页面、组件和接口实现盘点，不代表所有分支均已完成端到端验收。
 
-- 🛡 **角色权限 RBAC**：ADMIN / OPERATOR / VIEWER 三级权限，路由守卫 + 菜单/按钮级动态渲染
-- ✅ **单元测试**：Vitest + jsdom，覆盖 stores 与 utils，CI 自动跑测试与构建
+| 功能域 | 当前实现 |
+| --- | --- |
+| 对话工作台 | SSE 答案流、Markdown、知识引用、停止生成、告警上下文带入与追问 |
+| 会话管理 | 历史列表、时间分组、重命名、删除、最近会话恢复 |
+| 服务与指标 | 服务注册与编辑、健康状态、指标查询及 ECharts 趋势图 |
+| 告警中心 | 列表、详情、认领、确认、静默、恢复、批量操作、未读提醒与统计 |
+| 告警诊断 | 结构化诊断、置信度、证据与建议、引用、快照、时间线、通知记录、失败展示与手动重试 |
+| 运维治理 | 维护窗口操作、告警规则与升级策略、主 / 备值班配置 |
+| 通知 | 邮件、飞书及通用 Webhook 渠道管理、测试发送与投递记录 |
+| 知识库 | 文档上传、在线沉淀、版本管理、审核工作台、案例确认与修正、检索测试 |
+| 异步入库 | 审核与索引状态分开展示、BUILDING 轮询、FAILED 重试、入库期间只读 |
+| 权限管理 | 登录、资料与权限加载、租户、部门、角色、用户、菜单 / 路由 / 按钮权限控制 |
+| 审计 | 操作日志查询 |
 
----
+### 当前能力边界
 
-## 🧱 技术栈
+- 已有 `ReasoningBlock`、`ToolCallCard` 组件及对应消息字段，但当前 `askStream` 主要解析答案和 `citations`，尚未接入完整的规划、工具执行、专家协作事件流；不能据此宣称已实现 Agent 执行过程可视化。
+- “停止生成”用于终止当前聊天流，不等于取消服务端持久化任务，更不代表已撤销外部部署或回滚。
+- 知识文档版本回滚与服务部署回滚是不同功能；当前尚无部署 / 回滚执行工作台。
+- 维护、静默、升级和值班路由已有操作入口；仍需逐条完成页面联调与异常场景验证，不能只因存在页面就标记闭环通过。
+- 自主规划、并行专家诊断、运维任务、计划审批、自动部署 / 回滚与巡检工作台属于待开发能力。
 
-| 分类 | 技术 | 版本 |
+## 后续必须开发的功能
+
+以下能力是完成原计划中自动运维闭环的必要前端配套；按后端能力可用顺序推进，首个 PoC 不需要一次实现全部页面。
+
+| 阶段与后端依赖 | 必需前端能力 | 页面验收重点 |
 | --- | --- | --- |
-| 框架 | [Vue 3](https://vuejs.org/)（`<script setup>` SFC） | ^3.5 |
-| 构建 | [Vite](https://vite.dev/) | ^8.3 |
-| UI 组件库 | [Element Plus](https://element-plus.org/) + Icons | ^2.14 |
-| 状态管理 | [Pinia](https://pinia.vuejs.org/) | ^4.0 |
-| 路由 | [Vue Router](https://router.vuejs.org/) | ^4.6 |
-| HTTP | [Axios](https://axios-http.com/) | ^1.20 |
-| 图表 | [ECharts](https://echarts.apache.org/) | ^6.1 |
-| Markdown 渲染 | [markdown-it](https://github.com/markdown-it/markdown-it) | ^15.0 |
-| 测试 | [Vitest](https://vitest.dev/) + jsdom + @vue/test-utils | ^5.0 |
-| 运行时 | Node.js | 22 LTS |
+| 初步迁移 W1–W6；完整迁移 W9–W11 | 保持现有聊天、引用、记忆恢复、诊断、知识入库与权限交互兼容；区分失败、取消和完成 | 更换后端实现后，旧会话、告警诊断、引用及异步索引仍可用，无需让用户选择 AI 框架 |
+| 多步规划 PoC W7–W8 | 复用聊天页提交条件式健康诊断；展示可核验的观察结果与停止原因；根据后端可用契约接入工具 trace | DOWN 才继续查指定指标；UP 停止；不可达 / 未知不能显示为健康或冒充 DOWN；证据缺失如实提示 |
+| 工具与 MCP W12–W14 | 服务环境及资源绑定配置入口、可用只读工具 / MCP 连接状态与错误展示 | 目标来自后端授权资源；区分绑定缺失、无权限、断连和超时；不让用户或模型填写任意目标地址或凭据 |
+| 任务与异步诊断 W15–W16 | 运维任务列表与详情、阶段状态、步骤时间线、告警关联入口、重连及刷新恢复 | 页面关闭后任务仍可查询；按 eventId / sequence 去重补事件；聊天连接状态与任务状态分开 |
+| 多 Agent 取证 W17–W19 | 指标、日志、拓扑 / 发布、知识专家的并行步骤与证据面板，汇总诊断、缺项和冲突展示 | 展示来源、观察时间、资源与失败原因；部分失败不显示为全成功，不把无数据显示成正常 |
+| Runbook 与计划 W20 | 版本化 Runbook 及 ActionPlan 查看 / 配置入口，目标环境、步骤、参数、预检、风险和验证条件 | 用户可在执行前审阅具体计划；显示计划版本与关联证据；不把聊天建议直接当执行指令 |
+| 策略与审批 W21 | 策略 / 预授权范围管理、审批待办与详情、批准 / 拒绝、过期和计划变更提示 | 审批绑定准确计划及资源；修改计划后重新审批；重复点击、过期或权限撤销不能继续执行 |
+| 工作流与执行 W22–W24 | dry-run、执行进度、外部发布任务链接、部署 / 暂停 / 回滚结果、停止请求与人工接管 | 分清排队、执行中、取消请求、已取消、结果未知和等待人工；写操作超时不能提供盲目重试 |
+| 验证与补偿 W25 | 发布前后版本、探针 / 错误率 / 延迟、观察窗口、验证结论、有限补偿及接管提示 | “命令成功”与“业务恢复”分开展示；验证未通过不能显示整体成功；补偿失败可交接人工 |
+| 巡检与容量建议 W26 | 巡检计划与检查项、执行记录、下次运行时间、报告与容量建议 | 区分正常 / 异常 / 未知；建议附证据；容量建议不等于自动扩缩容已授权 |
+| 完整关联与演练 W27–W28 | 告警 → 快照 → 诊断任务 → 计划 → 审批 → 执行 → 验证 → 审计的跳转链路 | 刷新、断流、重复事件、审批过期、外部状态未知时仍能定位当前阶段与卡点 |
+| 受限试点 W29–W30 | 自动化范围、预授权撤销、停用自动执行入口与效果统计 | 展示人工接管、闭环成功率、耗时及成本；控制操作以服务端授权和结果为准 |
 
----
+上述管理功能可按角色复用现有服务、告警、审计和 RBAC 页面，不要求为每项新建独立控制台。任务状态、审批有效性、资源权限和执行结果由后端判定，前端只负责展示与发起授权操作。
 
-## 🖼 界面预览
+### 首个验证功能：条件式多步健康诊断
 
-> 截图占位，可在此补充实际界面图。
+对应后端 W7–W8，先验证模型根据真实反馈选择下一步的能力，暂不引入生产写操作、完整任务中心或多 Agent 大屏。
 
-| 对话工作台 | 告警中心 |
+测试请求：
+
+> 检查 todo-service 是否健康；如果服务明确返回 DOWN，再查 system.cpu.usage 并说明观测结果。不要执行任何变更。
+
+在后端测试环境提供可控健康和指标结果后，按以下步骤逐项验证：
+
+1. 打开聊天页、新建会话，选择或明确指定已授权的测试服务，发送上述请求。
+2. 设健康结果为 UP：确认只查询健康后结束，不查询 CPU；回答说明服务健康观察结果。
+3. 设健康结果为 DOWN：确认先查询健康，再查询 `system.cpu.usage`；展示真实数值、来源及观察时间，不把 CPU 高直接认定为根因。
+4. 设结果为 UNREACHABLE、UNKNOWN、未注册或工具超时：确认停止补查，页面说明无法判断及具体卡点，不显示“服务正常”。
+5. 在进行中停止生成、模拟网络中断：确认页面退出加载态，并说明诊断是否完成；除非后端确认取消，不宣称服务端任务已终止。
+6. 验证无权限服务被拒绝、上下文未串到其他会话，引用仍可查看；全程不出现部署、重启或回滚执行入口。
+7. 用同类请求进行 10 次模型试跑，结合后端 trace 核对至少 9 次分支正确、0 次写工具调用；确定性分支和失败场景另外逐项验证。
+
+**证据要求：** 当前答案文本不能证明工具调用顺序。初期可以结合后端已提供的 trace 验证；面向用户的步骤展示需后端提供结构化 trace 查询或明确约定的事件扩展。不能在前端编造“已查询健康 / 已执行工具”的进度。
+
+### 接口与状态契约先行
+
+- 保留当前 `POST /api/ops/ask/stream` 请求体 `{ question, sessionId }` 与 Bearer 鉴权，兼容答案、`citations` 和 `[DONE]`；不依赖引用必须先于答案到达。
+- 规划、工具、专家和任务事件是待设计扩展，不能直接把未知事件当答案追加。联调前明确事件类型、版本、错误、完成和取消语义。
+- 持久化任务需明确 runId、stepId、eventId / sequence、状态、时间与证据关联；刷新后从后端恢复，不能只保存在聊天消息或 Pinia 中。
+- 审批与执行契约需覆盖 planVersion / planHash、资源范围、有效期、审批结果和服务端可用操作；按钮禁用不能替代后端校验。
+- 展示的是计划摘要、操作步骤和证据，不要求暴露模型内部思维链。日志和工具结果需脱敏、限长，凭据不进入浏览器。
+
+### 暂不作为前端首版前置条件
+
+ES 向量库、全量 MCP Server、多云适配、任意 Shell、复杂 Agent 拓扑大屏、桌面打包和生产数据库 DDL 自动回滚，均不是首个只读 PoC 或首个受控自动运维闭环的前置条件。多 Agent 专家展示待 W17–W19 能力可用后再做，先保留简单问答快速路径。
+
+## 技术栈
+
+版本范围以 `package.json` 为准，实际安装版本由 `package-lock.json` 锁定。
+
+| 分类 | 依赖 |
 | --- | --- |
-| _（截图待补充）_ | _（截图待补充）_ |
+| 框架 | Vue `^3.5.42`，Composition API / script setup |
+| 构建 | Vite `^8.3.0` |
+| UI | Element Plus `^2.14.7`、Element Plus Icons |
+| 状态与路由 | Pinia `^4.0.3`、Vue Router `^4.6.4` |
+| 请求 | Axios `^1.20.0`；聊天使用 fetch + ReadableStream |
+| 图表与 Markdown | ECharts `^6.1.0`、markdown-it `^15.0.2` |
+| 测试 | Vitest `^5.0.3`、jsdom、Vue Test Utils |
+| 运行环境 | Node.js 22 LTS，使用符合依赖要求的最新补丁版本 |
 
-| 告警详情 · AI 诊断 | 知识库 |
-| --- | --- |
-| _（截图待补充）_ | _（截图待补充）_ |
+## 本地运行
 
----
+后端默认运行在 `http://localhost:8080`，需按后端 README 单独准备数据库、模型和本地配置。
 
-## 🚀 快速开始
-
-### 环境要求
-
-- Node.js ≥ 22
-- 后端服务运行在 `http://localhost:8080`（Vite 已配置 `/api` 代理）
-
-### 安装与启动
-
-```bash
-# 安装依赖
-npm install
-
-# 启动开发服务器（默认 http://localhost:5173，自动打开浏览器）
+```powershell
+npm ci
 npm run dev
 ```
 
-开发服务器会将 `/api` 请求代理到后端 `http://localhost:8080`，无需额外配置跨域。
+开发地址默认 `http://localhost:5173`，启动时自动打开浏览器。`vite.config.js` 将 `/api` 代理至后端；调整后端地址时修改对应代理配置。生产部署需另行配置 `/api` 反向代理及 SPA history 路由回退，开发代理不会随构建产物发布。
 
-### 构建
-
-```bash
-# 生产构建（产物输出到 dist/）
-npm run build
-
-# 本地预览构建产物
-npm run preview
-```
-
----
-
-## 📜 脚本命令
-
-| 命令 | 说明 |
+| 命令 | 用途 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器（Vite，端口 5173，自动打开浏览器） |
-| `npm run build` | 生产环境构建 |
-| `npm run preview` | 预览生产构建产物 |
-| `npm run test` | 运行单元测试（Vitest，单次执行） |
-| `npm run test:watch` | 监听模式运行单元测试 |
-| `npm run test:coverage` | 运行测试并生成覆盖率报告（v8，输出到 `coverage/`） |
+| `npm run dev` | 开发服务器 |
+| `npm run build` | 生产构建，输出 `dist/` |
+| `npm run preview` | 本地预览构建产物 |
+| `npm run test` | 单次单元测试 |
+| `npm run test:watch` | 监听测试 |
+| `npm run test:coverage` | 覆盖率报告，输出 `coverage/` |
 
----
+## 页面与权限
 
-## 📁 项目结构
+| 路径 | 功能 | 当前路由限制 |
+| --- | --- | --- |
+| `/chat`、`/chat/history` | 对话与历史 | 路由未设 requiresAuth；业务请求仍受后端鉴权约束，不承诺游客可用 |
+| `/admin/home` | 管理首页 | 登录 |
+| `/admin/services`、`/admin/metrics` | 服务与指标 | `service:read` |
+| `/admin/alerts`、`/admin/alerts/:id` | 告警与详情 | `alert:read` |
+| `/admin/alert-rules`、`/admin/oncall` | 规则与值班 | `alert:manage` / `oncall:manage` |
+| `/admin/knowledge`、`/admin/review` | 知识库与审核 | `knowledge:read` / `knowledge:review` |
+| `/admin/channels` | 通知渠道 | `notification:manage` |
+| `/admin/audit`、`/admin/users` | 审计与用户 | `audit:read` / `user:manage` |
+| `/admin/tenants`、`/admin/depts` | 租户与部门 | `tenant:manage` / `dept:read` |
+| `/admin/roles` | 角色权限 | 平台管理员 |
+
+后台业务路由同时要求登录；页面按钮另按具体操作权限显示。新增工作流页面需同步路由守卫、导航与操作权限，不只隐藏按钮。
+
+## 项目结构
 
 ```text
 ops-agent-frontend/
-├── .github/workflows/ci.yml     # CI：安装依赖 → 单元测试 → 构建
-├── public/                      # 静态资源
+├── AGENT.MD                    # 项目协作约定
 ├── src/
-│   ├── api/                     # 后端接口封装（按域拆分）
-│   │   ├── request.js           # Axios 实例：baseURL=/api、token 注入、401 处理
-│   │   ├── auth.js  chat.js     # 认证 / 对话（SSE）
-│   │   ├── alerts.js  diagnosis.js  snapshot.js  notifications.js
-│   │   ├── knowledge.js  maintenance.js  oncall.js
-│   │   └── service.js  metrics.js  audit.js  user.js
+│   ├── api/                    # 业务接口、统一请求、SSE 解析
 │   ├── components/
-│   │   ├── layout/              # AppLayout（对话壳）/ AdminLayout（后台壳）/ Sidebar
-│   │   ├── common/AlertBell.vue # 顶栏告警铃铛（未读红点 / popover / 标记已读）
-│   │   ├── chat/                # ChatInput / ChatMessage / ToolCallCard / ReasoningBlock
-│   │   ├── service/             # ServiceCard / ServiceFormDialog / StatusBadge
-│   │   ├── metrics/             # LineChart / MetricCard
-│   │   ├── auth/                # LoginDialog / LoginForm
-│   │   └── user/UserFormDialog.vue
+│   │   ├── layout/             # 对话与管理布局、导航
+│   │   ├── chat/               # 消息、输入、工具卡片与推理摘要组件
+│   │   ├── common/             # 告警铃铛等公共组件
+│   │   └── service/、metrics/、auth/、user/
 │   ├── views/
-│   │   ├── Chat.vue             # 对话工作台（含告警上下文卡片）
-│   │   ├── HistoryChat.vue      # 历史会话
-│   │   ├── Login.vue  ServiceManage.vue  Metrics.vue
-│   │   ├── AuditLog.vue  UserManage.vue
-│   │   ├── admin/
-│   │   │   ├── AdminHome.vue    # 管理首页（统计卡）
-│   │   │   ├── alerts/          # AlertEvents / AlertDetail / AlertRules / NotificationChannels
-│   │   │   └── oncall/OncallManage.vue
-│   │   └── knowledge/           # Knowledge + Overview / Documents / Cases / Retrieval Tab
-│   ├── stores/                  # Pinia：auth / chat / alert（含单元测试）
-│   ├── utils/                   # conversation 分组等工具（含单元测试）
-│   ├── router/index.js          # 路由 + 登录态/角色守卫
-│   ├── App.vue  main.js  style.css
-├── vite.config.js               # 别名 @、开发代理、Vitest 配置
-└── package.json
+│   │   ├── Chat.vue、HistoryChat.vue
+│   │   ├── ServiceManage.vue、Metrics.vue、AuditLog.vue、UserManage.vue
+│   │   ├── admin/              # 首页、告警、规则、通知与值班
+│   │   ├── knowledge/          # 文档、案例、检索及审核工作台
+│   │   └── rbac/               # 租户、部门、角色
+│   ├── stores/                 # auth、chat、alert
+│   ├── router/                 # 路由与守卫
+│   ├── styles/、utils/         # 样式、会话分组与时间工具
+│   └── App.vue、main.js、style.css
+├── vite.config.js              # 代理、别名与 Vitest 配置
+├── package.json
+└── package-lock.json
 ```
 
----
+任务中心、审批、执行和巡检等为规划功能，当前目录树不表示它们已实现。
 
-## 🧭 路由一览
+## 验证与交付
 
-| 路径 | 页面 | 权限 |
-| --- | --- | --- |
-| `/chat` | 对话工作台 | 公开（游客可问答） |
-| `/chat/history` | 历史对话 | 登录 |
-| `/admin/home` | 管理首页 | 登录 |
-| `/admin/services` `/admin/metrics` | 服务管理 / 指标监控 | 登录 |
-| `/admin/alerts` `/admin/alerts/:id` | 告警中心 / 告警详情 | 登录 |
-| `/admin/knowledge` | 知识库 | 登录 |
-| `/admin/oncall` `/admin/alert-rules` | 值班管理 / 告警规则 | ADMIN、OPERATOR |
-| `/admin/channels` `/admin/audit` `/admin/users` | 通知渠道 / 审计日志 / 用户管理 | ADMIN |
+- 代码变更执行 `npm run test` 与 `npm run build`；报告与通过情况以实际运行结果为准。
+- 当前覆盖率只采集 stores 与 utils，不代表页面交互或端到端链路覆盖。
+- 当前 CI 对 main push、目标为 main 的 PR 和手动触发生效，不自动验证本功能分支的每次 push。CI 执行测试与构建；覆盖率需显式运行 coverage 脚本生成。
+- 页面集成测试按单条业务链路从起点走到终点，每步检查结果；阻塞问题先修复并复测，其他问题记录后统一处理。
+- 新功能至少验证正常、无权限、失败、超时、取消和刷新恢复；涉及写操作时增加重复提交、审批失效和结果未知验证。
 
-> 旧的顶层路径（`/services`、`/metrics` 等）已重定向到 `/admin/*`，保证旧链接可用。
-
----
-
-## 🤝 贡献
-
-1. Fork 本仓库并新建特性分支：`git checkout -b feature/your-feature`
-2. 提交前请确保本地通过：
-
-   ```bash
-   npm run test
-   npm run build
-   ```
-
-3. 提交 PR 到 `main` 分支，CI 会自动执行测试与构建校验。
-
----
-
-## 📄 License
-
-本项目为运维智能体平台的前端部分，暂未指定开源许可证。
+本项目暂未指定开源许可证。
