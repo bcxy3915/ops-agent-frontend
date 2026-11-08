@@ -63,6 +63,7 @@ src/
 - 组件命名 PascalCase，页面放在 `views/`，可复用组件放在 `components/` 对应域下；`utils/` 只放无副作用的纯函数。
 - 样式优先复用 `src/style.css` 中的 CSS 变量（`--primary` / `--success` / `--warning` / `--danger` / `--border` / `--card-bg` 等）与既有 class，避免散落硬编码颜色。
 - 知识库相关样式集中在 `src/styles/knowledge.css`，枚举 tag 样式类（`kb-tag-*`）与其映射表配套使用。
+- 管理后台与对话页统一使用 `components/layout/SidebarFrame.vue` 和 `useSidebarLayout.js`：宽度 ≥1200px 时恢复桌面手动偏好（`ops_sidebar_collapsed`），768–1199px 默认收为 64px 图标栏并允许手动展开，≤767px 使用抽屉导航。手机选中导航、路由变化、遮罩或 Esc 均应关闭抽屉；保留焦点管理。侧栏收放只影响布局，不改变菜单权限、会话内容或业务状态；宽度动画完成后通知图表 resize。
 
 ## 5. 认证、权限与路由
 

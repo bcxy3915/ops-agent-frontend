@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ 'is-collapsed': collapsed }" aria-label="对话导航">
     <!-- ========== 顶部 Logo + 新建对话 ========== -->
     <div class="sidebar-header">
       <div class="logo">
@@ -11,20 +11,21 @@
             <path d="M2 12l10 5 10-5" />
           </svg>
         </div>
-        Ops Agent
+        <span class="logo-text">Ops Agent</span>
       </div>
-      <button class="new-chat-btn" @click="handleNewChat">
+      <button class="new-chat-btn" title="新建对话" aria-label="新建对话" data-sidebar-navigation @click="handleNewChat">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
-        新建对话
+        <span>新建对话</span>
       </button>
     </div>
 
     <!-- ========== 会话历史 ========== -->
     <div class="history">
+      <button v-if="collapsed && authStore.isLoggedIn" class="compact-history" title="查看全部对话" aria-label="查看全部对话" data-sidebar-navigation @click="goToHistory"><el-icon><ChatLineSquare /></el-icon></button>
       <div v-if="!authStore.isLoggedIn" class="history-empty">
         <el-icon>
           <Lock />
@@ -41,7 +42,7 @@
 
       <template v-else>
         <!-- "查看全部"入口 -->
-        <div class="history-view-all" @click="goToHistory">
+        <div class="history-view-all" data-sidebar-navigation @click="goToHistory">
           <el-icon>
             <Expand />
           </el-icon>
@@ -53,7 +54,7 @@
 
           <!-- ★ 每一项：标题 + 三个点下拉菜单 -->
           <div v-for="item in group.items" :key="item.sessionId" class="history-item"
-            :class="{ active: chatStore.sessionId === item.sessionId }" @click="selectSession(item.sessionId)">
+            :class="{ active: chatStore.sessionId === item.sessionId }" data-sidebar-navigation @click="selectSession(item.sessionId)">
             <span class="history-title">{{ item.title || '新对话' }}</span>
 
             <!-- ★ 三个点下拉菜单 -->
@@ -87,7 +88,7 @@
     </div>
 
     <!-- ========== 管理后台入口 ========== -->
-    <div v-if="authStore.isLoggedIn" class="admin-entry" @click="goAdmin">
+    <div v-if="authStore.isLoggedIn" class="admin-entry" title="管理后台" data-sidebar-navigation @click="goAdmin">
       <div class="admin-entry-icon">
         <el-icon>
           <Grid />
@@ -105,7 +106,7 @@
     <!-- ========== 底部用户区 ========== -->
     <div v-if="authStore.isLoggedIn" class="user-area-wrapper">
       <el-dropdown popper-class="sidebar-user-dropdown" trigger="click" placement="top-start" @command="handleCommand">
-        <div class="user-area">
+        <div class="user-area" :title="authStore.username" tabindex="0" role="button" aria-label="用户菜单">
           <div class="avatar">{{ authStore.userInitial }}</div>
           <div class="user-info">
             <div class="user-name">{{ authStore.username }}</div>
@@ -137,7 +138,7 @@
       </el-dropdown>
     </div>
 
-    <div v-else class="user-area login-area" @click="goToLogin">
+    <div v-else class="user-area login-area" title="登录" data-sidebar-navigation @click="goToLogin">
       <div class="avatar guest">
         <el-icon>
           <UserFilled />
@@ -171,6 +172,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+defineProps({ collapsed: { type: Boolean, default: false } })
 
 function goToHistory() {
   router.push('/chat/history')
@@ -300,6 +302,23 @@ const roleLabel = computed(() => authStore.roleLabel)
 </script>
 
 <style scoped>
+.sidebar.is-collapsed .logo-text,
+.sidebar.is-collapsed .new-chat-btn > span,
+.sidebar.is-collapsed .history-empty,
+.sidebar.is-collapsed .history-view-all,
+.sidebar.is-collapsed .history-group,
+.sidebar.is-collapsed .admin-entry-info,
+.sidebar.is-collapsed .admin-entry-arrow,
+.sidebar.is-collapsed .user-info,
+.sidebar.is-collapsed .user-area > .el-icon { display: none; }
+.sidebar.is-collapsed .sidebar-header { padding: 8px; }
+.sidebar.is-collapsed .logo { justify-content: center; margin-bottom: 16px; }
+.sidebar.is-collapsed .new-chat-btn { padding: 11px 0; }
+.sidebar.is-collapsed .admin-entry { margin: 4px 8px; padding: 10px 0; justify-content: center; }
+.sidebar.is-collapsed .user-area { justify-content: center; padding: 12px 0; }
+.compact-history { display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 18px; }
+.compact-history:hover { background: var(--bg-hover); color: var(--primary); }
+.compact-history:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 /* ============ 侧边栏容器 ============ */
 .sidebar {
   width: 260px;

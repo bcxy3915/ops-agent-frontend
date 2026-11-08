@@ -108,59 +108,12 @@
     </div>
 
     <!-- 文档详情 -->
-    <el-dialog v-model="detailVisible" title="文档详情" width="760px" destroy-on-close>
-      <template v-if="detail">
-        <div class="kb-detail-block">
-          <div class="kb-detail-label">基本信息</div>
-          <div style="font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 20px">
-            <span><span class="kb-muted">标题：</span><b>{{ detail.title }}</b></span>
-            <span><span class="kb-muted">层级：</span><span class="kb-tag" :class="layerCls(detail.layer)">{{ layerLabel(detail.layer) }}</span></span>
-            <span><span class="kb-muted">状态：</span><span class="kb-tag" :class="statusCls(detail.trustStatus)">{{ statusLabel(detail.trustStatus) }}</span></span>
-            <span>
-              <span class="kb-muted">索引状态：</span>
-              <span class="kb-tag" :class="publishCls(detail.publishStatus)">{{ publishLabel(detail.publishStatus) }}</span>
-            </span>
-            <span v-if="detail.publishedAt"><span class="kb-muted">入库时间：</span>{{ formatDay(detail.publishedAt) }}</span>
-            <span><span class="kb-muted">版本：</span>v{{ detail.version }}</span>
-            <span><span class="kb-muted">类型：</span>{{ docTypeLabel(detail.docType) }}</span>
-            <span><span class="kb-muted">负责人：</span>{{ detail.owner || '官方' }}</span>
-            <span><span class="kb-muted">命中：</span>{{ fmtNumber(detail.hitCount) }} 次</span>
-            <span><span class="kb-muted">分块：</span>{{ fmtNumber(detail.chunkCount) }} 个</span>
-            <span v-if="detail.serviceIds && detail.serviceIds.length"><span class="kb-muted">服务：</span>{{ detail.serviceIds.join(' / ') }}</span>
-            <span v-if="detail.tags && detail.tags.length"><span class="kb-muted">标签：</span>{{ detail.tags.join('，') }}</span>
-            <span><span class="kb-muted">创建：</span>{{ formatDay(detail.createdAt) }}</span>
-            <span><span class="kb-muted">更新：</span>{{ formatDay(detail.updatedAt) }}</span>
-          </div>
-        </div>
-        <div v-if="detail.publishStatus === 'FAILED'" class="kb-detail-block">
-          <el-alert
-            type="error"
-            :closable="false"
-            show-icon
-            :title="`入库失败：${detail.publishError || '未知原因'}`"
-          />
-          <el-button
-            v-if="canWrite || canReview"
-            size="small"
-            type="primary"
-            plain
-            style="margin-top: 8px"
-            @click="reindexDoc(detail)"
-          >重试入库</el-button>
-        </div>
-        <div v-if="detail.rawContent" class="kb-detail-block">
-          <div class="kb-detail-label">正文内容</div>
-          <div class="kb-detail-content">{{ detail.rawContent }}</div>
-        </div>
-        <div v-if="detail.chunks && detail.chunks.length" class="kb-detail-block">
-          <div class="kb-detail-label">分块（{{ detail.chunks.length }}）</div>
-          <div v-for="c in detail.chunks" :key="c.id" class="kb-detail-content" style="margin-bottom: 8px; max-height: 140px">
-            <div class="kb-doc-meta" style="margin-bottom: 4px">#{{ c.ordinal }}<span v-if="c.section"> · {{ c.section }}</span></div>
-            {{ c.content }}
-          </div>
-        </div>
-      </template>
-    </el-dialog>
+    <DocumentDetailDialog
+      v-model="detailVisible"
+      :document="detail"
+      :can-retry="canWrite || canReview"
+      @retry="reindexDoc"
+    />
 
     <!-- 检索命中流水 -->
     <el-dialog v-model="hitsVisible" title="检索命中记录" width="680px" destroy-on-close>
@@ -274,6 +227,7 @@
 </template>
 
 <script setup>
+import DocumentDetailDialog from './DocumentDetailDialog.vue'
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh } from '@element-plus/icons-vue'

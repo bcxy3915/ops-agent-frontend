@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { askStream } from "./chat";
+import MarkdownIt from "markdown-it";
 
 vi.mock("./request", () => ({ default: {} }));
 vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ token: "test-token" }) }));
@@ -26,6 +27,29 @@ function responseFor(chunks) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("对话 SSE 契约", () => {
+  it("逐 token 保留列表空格、代码缩进和命令空格，并能渲染 Markdown", async () => {
+    const tokens = ["**故障告警**\n", "-", " ", "集群异常\n", "  ", "- 子项\n\n",
+      "```sh\n", "  echo hello\n", "```\n", "行内 `GET", " ", "/_health`\n\n"];
+    // HTTP 层为每行 data 字段添加一个分隔空格，正文空格不能被当成协议字符丢弃。
+    const wire = tokens.map(token => token.split("\n").map(line => `data: ${line}`).join("\n") + "\n\n")
+      .join("") + "event: citations\ndata: []\n\ndata: [DONE]\n\n";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor(
+      Array.from({ length: Math.ceil(wire.length / 7) }, (_, i) => wire.slice(i * 7, i * 7 + 7))
+    )));
+    let answer = "";
+    await new Promise((resolve, reject) => askStream("session", "问题", {
+      onChunk: text => { answer += text; }, onDone: resolve, onError: reject,
+    }));
+    expect(answer).toBe(tokens.join(""));
+    const html = new MarkdownIt({ html: false, linkify: true, breaks: true }).render(answer);
+    const rendered = document.createElement("div");
+    rendered.innerHTML = html;
+    expect(rendered.querySelectorAll("ul")).toHaveLength(2);
+    expect(rendered.querySelector("ul > li > ul > li").textContent).toBe("子项");
+    expect(rendered.querySelector("pre code").textContent).toBe("  echo hello\n");
+    expect(rendered.querySelector("p code").textContent).toBe("GET /_health");
+  });
+
   it("分片和多行答案后输出引用，只有 DONE 才正常结束", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor([
       "data: 第一行\ndata: 第二行\n\nevent: cita",

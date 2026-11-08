@@ -1,9 +1,10 @@
 <template>
   <div class="admin-shell">
     <!-- ========== 管理壳侧边栏 ========== -->
-    <aside class="admin-sidebar">
+    <SidebarFrame v-slot="{ collapsed }">
+    <aside class="admin-sidebar" :class="{ 'is-collapsed': collapsed }" aria-label="管理导航">
       <!-- 返回对话 -->
-      <div class="adm-back" @click="goChat">
+      <div class="adm-back" title="返回对话" data-sidebar-navigation @click="goChat">
         <el-icon>
           <ArrowLeft />
         </el-icon>
@@ -38,11 +39,11 @@
           <div v-if="group.visible" class="adm-nav-group">
             <div class="adm-nav-label">{{ group.label }}</div>
             <router-link v-for="item in group.items.filter((i) => i.visible !== false)" :key="item.path" :to="item.path" class="adm-nav-item"
-              :class="{ active: isActive(item.path) }">
+              :class="{ active: isActive(item.path) }" :title="item.label" :aria-label="item.label">
               <el-icon class="adm-nav-icon">
                 <component :is="item.icon" />
               </el-icon>
-              {{ item.label }}
+              <span class="adm-nav-text">{{ item.label }}</span>
               <span v-if="item.badge" class="adm-badge">{{ item.badge }}</span>
             </router-link>
           </div>
@@ -52,7 +53,7 @@
       <!-- 底部用户区 -->
       <div v-if="authStore.isLoggedIn" class="adm-user-wrapper">
         <el-dropdown popper-class="admin-user-dropdown" trigger="click" placement="top-start" @command="handleCommand">
-          <div class="adm-user">
+          <div class="adm-user" :title="authStore.username" tabindex="0" role="button" aria-label="用户菜单">
             <div class="avatar">{{ authStore.userInitial }}</div>
             <div class="adm-user-info">
               <div class="adm-user-name">{{ authStore.username }}</div>
@@ -79,6 +80,7 @@
         </el-dropdown>
       </div>
     </aside>
+    </SidebarFrame>
 
     <!-- ========== 内容区 ========== -->
     <main class="admin-main">
@@ -88,6 +90,7 @@
 </template>
 
 <script setup>
+import SidebarFrame from './SidebarFrame.vue'
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -470,9 +473,30 @@ const roleLabel = computed(() => authStore.roleLabel)
 /* ============ 内容区 ============ */
 .admin-main {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.35);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+.admin-sidebar.is-collapsed .adm-back span,
+.admin-sidebar.is-collapsed .adm-brand-text,
+.admin-sidebar.is-collapsed .adm-context,
+.admin-sidebar.is-collapsed .adm-nav-label,
+.admin-sidebar.is-collapsed .adm-nav-text,
+.admin-sidebar.is-collapsed .adm-user-info,
+.admin-sidebar.is-collapsed .adm-user > .el-icon { display: none; }
+.admin-sidebar.is-collapsed .adm-brand { justify-content: center; padding: 8px 0 14px; }
+.admin-sidebar.is-collapsed .adm-back { justify-content: center; margin: 4px 8px; padding: 9px 0; }
+.admin-sidebar.is-collapsed .adm-nav { padding: 8px; }
+.admin-sidebar.is-collapsed .adm-nav-group { margin-bottom: 8px; }
+.admin-sidebar.is-collapsed .adm-nav-group + .adm-nav-group { border-top: 1px solid var(--border-light); padding-top: 8px; }
+.admin-sidebar.is-collapsed .adm-nav-item { position: relative; justify-content: center; padding: 12px 0; }
+.admin-sidebar.is-collapsed .adm-nav-icon { flex-shrink: 0; }
+.admin-sidebar.is-collapsed .adm-badge { position: absolute; right: 0; top: 0; min-width: 14px; height: 14px; padding-inline: 3px; line-height: 14px; font-size: 9px; }
+.admin-sidebar.is-collapsed .adm-user { justify-content: center; padding: 12px 0; }
+.admin-shell { height: 100dvh; }
+@media (max-width: 767px) { .admin-shell { flex-direction: column; } }
 </style>
