@@ -1,12 +1,7 @@
 /**
  * 对话 API（SSE 版本）
  *
- * 使用 EventSource 连接后端 SSE 接口。
- * 注意：EventSource 不支持自定义 Header，
- *       Token 要通过 URL 参数传递（后端需支持）或者用 fetch + ReadableStream。
- *
- * 由于 Spring Security 需要 Authorization Header，
- * 这里用 fetch + ReadableStream 手写 SSE 解析。
+ * 使用 fetch + ReadableStream 连接 SSE，Bearer 凭证通过请求头传递。
  */
 import request from "./request";
 import { useAuthStore } from "@/stores/auth";
@@ -33,9 +28,13 @@ function handle401() {
  * 流式问答（SSE）
  *
  * 后端事件格式：
- *   - 首个事件：event=citations, data=引用列表 JSON → 交给 onCitations
  *   - 默认事件：data=答案 token → 交给 onChunk 逐字追加
+ *   - 答案后：event=citations, data=引用列表 JSON → 交给 onCitations
  *   - 结束事件：data=[DONE] → onDone
+ * @param {string} sessionId 会话标识
+ * @param {string} question 用户问题
+ * @param {object} callbacks 答案、结束、错误及引用回调
+ * @returns {{close: Function}} 可停止当前请求的句柄
  */
 export function askStream(sessionId, question, { onChunk, onDone, onError, onCitations }) {
   const authStore = useAuthStore();
@@ -85,7 +84,7 @@ export function askStream(sessionId, question, { onChunk, onDone, onError, onCit
 
         for (const event of events) {
           const lines = event.split(/\r?\n/);
-          // SSE 事件名：默认 message 事件（答案 token），首个事件为 citations
+          // SSE 事件名：默认 message 事件为答案 token，citations 为引用
           let eventName = "";
           const dataLines = [];
           for (const line of lines) {
@@ -125,7 +124,7 @@ export function askStream(sessionId, question, { onChunk, onDone, onError, onCit
       }
 
       if (!stopped) {
-        onDone && onDone();
+        throw new Error("响应流提前结束，未收到完成标记，请重试");
       }
     })
     .catch((err) => {

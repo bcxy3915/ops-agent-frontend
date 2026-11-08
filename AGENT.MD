@@ -77,7 +77,7 @@ src/
 ## 6. 对话与 SSE 约定
 
 - 流式接口使用 `fetch` + `ReadableStream`（`src/api/chat.js` 的 `askStream`），**不使用 `EventSource`**，因为需要携带 Bearer 头与手动解析 SSE。
-- 事件顺序：先 `event: citations`（引用来源 JSON），随后 token 数据块，最后 `[DONE]` 触发 `onDone`；异常走 `onError`。
+- 事件顺序：先答案 token，随后 `event: citations`（引用来源 JSON），最后 `[DONE]` 触发 `onDone`；异常或未收到 `[DONE]` 的提前断流走 `onError`，保留已接收的部分答案。
 - `askStream(sessionId, question, { onChunk, onDone, onError, onCitations })` 返回 `{ close() }`，页面卸载或用户停止时调用 `close()`。
 - 会话 id 存于 localStorage `ops_current_session`，由 `stores/chat.js` 的 `ensureSessionId` / `generateSessionId` 管理；切换或新建会话时同步更新。
 - 首次进入 `/chat`（`Chat.vue` 挂载且消息为空）时调用 `chatStore.restoreLatestConversation()`：优先恢复 localStorage 中的会话（须仍在历史列表），否则加载最近一条会话（后端按 `lastActiveAt` 倒序）；没有历史则保持欢迎页。带告警上下文 `?q=` 进入时优先自动提问，不恢复历史。已有消息时该方法直接返回，不得覆盖进行中的对话。

@@ -1,8 +1,61 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { askStream } from "./chat";
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({ token: "test-token" }),
-}));
+vi.mock("./request", () => ({ default: {} }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ token: "test-token" }) }));
+
+/**
+ * 创建仅在内存中读取的 SSE 响应，不访问真实后端。
+ * @param {string[]} chunks 分片数据
+ * @returns {object} 模拟 fetch 响应
+ */
+function responseFor(chunks) {
+  let index = 0;
+  return {
+    ok: true,
+    body: {
+      getReader: () => ({
+        read: async () => index < chunks.length
+          ? { done: false, value: new TextEncoder().encode(chunks[index++]) }
+          : { done: true },
+      }),
+    },
+  };
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("对话 SSE 契约", () => {
+  it("分片和多行答案后输出引用，只有 DONE 才正常结束", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor([
+      "data: 第一行\ndata: 第二行\n\nevent: cita",
+      "tions\ndata: [{\"docId\":1}]\n\ndata: [DO",
+      "NE]\n\n",
+    ])));
+    const calls = [];
+    const onError = vi.fn();
+    await new Promise((resolve) => askStream("session", "问题", {
+      onChunk: text => calls.push(text),
+      onCitations: citations => calls.push(citations),
+      onDone: () => { calls.push("完成"); resolve(); },
+      onError: error => { onError(error); resolve(); },
+    }));
+    expect(calls).toEqual(["第一行\n第二行", [{ docId: 1 }], "完成"]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("提前断流保留部分答案并报错，不触发成功回调", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor(["data: 部分答案\n\n"])));
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    const error = await new Promise((resolve) => askStream("session", "问题", {
+      onChunk, onDone, onError: resolve,
+    }));
+    expect(onChunk).toHaveBeenCalledWith("部分答案");
+    expect(onDone).not.toHaveBeenCalled();
+    expect(error.message).toContain("未收到完成标记");
+  });
+});
 
 describe("askStream", () => {
   afterEach(() => {
