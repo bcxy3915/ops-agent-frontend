@@ -109,14 +109,14 @@ ES 向量库、全量 MCP Server、多云适配、任意 Shell、复杂 Agent �
 
 ## 本地运行
 
-后端默认运行在 `http://localhost:8080`，需按后端 README 单独准备数据库、模型和本地配置。
+后端默认运行在 `http://localhost:18080`，需按后端 README 单独准备数据库、模型和本地配置。
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-开发地址默认 `http://localhost:5173`，启动时自动打开浏览器。`vite.config.js` 将 `/api` 代理至后端；调整后端地址时修改对应代理配置。生产部署需另行配置 `/api` 反向代理及 SPA history 路由回退，开发代理不会随构建产物发布。
+开发地址固定为 `http://localhost:8888`，启动时自动打开浏览器；端口被占用时会报错，不自动切换。`vite.config.js` 将 `/api` 代理至 `http://localhost:18080`；调整后端地址时修改对应代理配置。生产部署需另行配置 `/api` 反向代理及 SPA history 路由回退，开发代理不会随构建产物发布。
 
 | 命令 | 用途 |
 | --- | --- |

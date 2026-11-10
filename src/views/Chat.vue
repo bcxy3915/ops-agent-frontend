@@ -106,6 +106,17 @@ const chatInputRef = ref(null)          // ★ 输入框引用
 const loginDialogVisible = ref(false)    // ★ 登录弹窗
 const pendingQuestion = ref('')          // ★ 待发送的问题
 
+/**
+ * 供工作台在新建对话后聚焦输入框。
+ * 无入参。
+ * @returns {void} 无返回数据。
+ */
+function focusInput() {
+  chatInputRef.value?.focus()
+}
+
+defineExpose({ focusInput })
+
 // ★ sessionId 从 store 拿（store 里已持久化到 localStorage）
 const sessionId = computed(() => chatStore.sessionId || '未创建')
 

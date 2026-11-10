@@ -34,7 +34,7 @@ src/
 
 其他重要路径：
 
-- `vite.config.js`：`@` → `src` 别名、开发端口 5173、`/api` 代理、Vitest 配置。
+- `vite.config.js`：`@` → `src` 别名、开发端口 8888、`/api` 代理、Vitest 配置。
 - `jsconfig.json`：编辑器路径提示（`@/*` → `src/*`）。
 - `.github/workflows/ci.yml`：Node 22 下 `npm ci` → `npm run test` → `npm run build`，并上传覆盖率产物。
 - `.gitignore`：忽略 `node_modules`、`dist`、`*.local`、`logs`、`docs/`、`coverage/`。
@@ -111,7 +111,7 @@ src/
 # 安装依赖（CI 使用 npm ci）
 npm install
 
-# 启动开发服务器（默认 http://localhost:5173，/api 代理到 http://localhost:8080）
+# 启动开发服务器（默认 http://localhost:8888，/api 代理到 http://localhost:18080）
 npm run dev
 
 # 生产构建
@@ -130,7 +130,7 @@ npm run test:watch
 npm run test:coverage
 ```
 
-启动前端前需先启动后端（默认 8080），或按需调整 `vite.config.js` 的代理目标。不要为了通过构建或测试而关闭路由守卫、权限判断或类型/规范检查。
+启动前端前需先启动后端（默认 18080），或按需调整 `vite.config.js` 的代理目标。不要为了通过构建或测试而关闭路由守卫、权限判断或类型/规范检查。
 
 ## 9. 测试与交付
 

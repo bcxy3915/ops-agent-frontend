@@ -53,6 +53,14 @@ function handleSend() {
 
 // 暴露 clear 方法给父组件调用
 defineExpose({
+    /**
+     * 将焦点移至问题输入框，不修改输入内容。
+     * 无入参。
+     * @returns {void} 无返回数据。
+     */
+    focus() {
+        textareaRef.value?.focus()
+    },
     clear() {
         text.value = ''
         nextTick(() => {

@@ -25,7 +25,7 @@
       <!-- 召回结果 -->
       <div class="kb-card">
         <div class="kb-card-hd">
-          <div class="kb-card-title">召回结果（混合检索 + Rerank）</div>
+          <div class="kb-card-title">召回结果（混合检索 + 相关性校验）</div>
           <span class="kb-tag kb-tag-info">Top {{ result.hits?.length || 0 }}</span>
         </div>
         <div class="kb-card-bd" style="padding-top: 12px">
@@ -55,12 +55,12 @@
       <div class="kb-card">
         <div class="kb-card-hd">
           <div class="kb-card-title">模拟诊断回答</div>
-          <span class="kb-tag kb-tag-success">全部可溯源</span>
+          <span v-if="result.hits?.length" class="kb-tag kb-tag-success">已返回来源</span>
         </div>
         <div class="kb-card-bd">
           <div v-if="result.hits && result.hits.length" class="kb-ans-box">
             <div>
-              已基于本次召回的 {{ result.hits.length }} 条知识生成回答骨架，每条结论均可溯源到对应知识条目
+              本次检索返回 {{ result.hits.length }} 条通过相关性校验的知识片段，来源如下
               <span class="kb-ref-mark">[{{ refIndexText(result.hits) }}]</span>。
             </div>
             <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-muted)">

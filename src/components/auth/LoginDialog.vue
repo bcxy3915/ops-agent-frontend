@@ -1,6 +1,6 @@
 <template>
     <el-dialog v-model="visible" width="420px" :close-on-click-modal="true" :show-close="true" align-center
-        class="login-dialog">
+        class="login-dialog" @closed="emit('closed')">
         <template #header>
             <div class="dialog-header">
                 <div class="logo-icon">
@@ -22,7 +22,7 @@
             <el-icon>
                 <ChatDotRound />
             </el-icon>
-            <span>登录成功后会自动发送你刚才输入的内容</span>
+            <span>{{ sendAfterLogin ? '登录成功后会自动发送你刚才输入的内容' : '登录后即可开始对话，并保存对话历史' }}</span>
         </div>
 
         <LoginForm @success="handleSuccess" />
@@ -35,10 +35,11 @@ import { ChatDotRound } from '@element-plus/icons-vue'
 import LoginForm from './LoginForm.vue'
 
 const props = defineProps({
-    modelValue: { type: Boolean, default: false }
+    modelValue: { type: Boolean, default: false },
+    sendAfterLogin: { type: Boolean, default: true }
 })
 
-const emit = defineEmits(['update:modelValue', 'success'])
+const emit = defineEmits(['update:modelValue', 'success', 'closed'])
 
 const visible = computed({
     get: () => props.modelValue,

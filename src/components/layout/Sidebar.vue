@@ -173,6 +173,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 defineProps({ collapsed: { type: Boolean, default: false } })
+const emit = defineEmits(['new-chat'])
 
 function goToHistory() {
   router.push('/chat/history')
@@ -207,9 +208,13 @@ watch(
 )
 
 // ============ 事件处理 ============
+/**
+ * 将新建意图交给工作台，统一处理登录弹窗与后续导航。
+ * 无入参。
+ * @returns {void} 无返回数据。
+ */
 function handleNewChat() {
-  chatStore.newConversation()
-  router.push('/chat')
+  emit('new-chat')
 }
 
 function goToLogin() {

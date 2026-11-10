@@ -11,15 +11,16 @@ export default defineConfig({
   },
   server: {
     host: true, // 同时支持 localhost / 127.0.0.1 访问
-    port: 5173,
+    port: 8888,
+    strictPort: true, // 端口被占用时明确报错，避免自动切换后与跨域白名单不一致
     open: true, // 启动时自动打开浏览器
     proxy: {
       // 后端代理：统一改写 Origin，避免 127.0.0.1 / localhost 差异触发 CORS
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://localhost:18080",
         changeOrigin: true,
         headers: {
-          origin: "http://localhost:5173",
+          origin: "http://localhost:8888",
         },
       },
     },
