@@ -62,12 +62,17 @@
                 <span class="meta-value">{{ relativeTime }}</span>
             </div>
         </div>
+        <!-- 独立诊断入口，不改变原有服务管理操作权限。 -->
+        <div v-if="canDiagnose || canReadDiagnosis" class="diagnosis-actions">
+            <el-button v-if="canDiagnose" link type="primary" @click="emit('diagnose', service)"><el-icon><FirstAidKit /></el-icon>自主诊断</el-button>
+            <el-button v-if="canReadDiagnosis" link type="primary" @click="emit('diagnose', service)">最近任务</el-button>
+        </div>
     </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { MoreFilled, Refresh, Edit, Delete, Link } from '@element-plus/icons-vue'
+import { MoreFilled, Refresh, Edit, Delete, Link, FirstAidKit } from '@element-plus/icons-vue'
 import StatusBadge from './StatusBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -75,13 +80,15 @@ const props = defineProps({
     service: { type: Object, required: true }
 })
 
-const emit = defineEmits(['edit', 'delete', 'check'])
+const emit = defineEmits(['edit', 'delete', 'check', 'diagnose'])
 
 const authStore = useAuthStore()
 const checking = ref(false)
 
 // 权限
 const canManage = computed(() => authStore.hasPermission('service:manage'))
+const canDiagnose = computed(() => authStore.hasPermission('service:read') && authStore.hasPermission('diagnosis:trigger'))
+const canReadDiagnosis = computed(() => authStore.hasPermission('service:read') && authStore.hasPermission('diagnosis:read'))
 const canEdit = canManage
 const canDelete = canManage
 
@@ -111,6 +118,8 @@ function handleCommand(cmd) {
 </script>
 
 <style scoped>
+.diagnosis-actions { display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--border);margin-top:16px;padding-top:12px; }
+.diagnosis-actions .el-icon { margin-right:5px; }
 .service-card {
     background: linear-gradient(180deg, #FFFFFF 0%, #FDFEFF 100%);
     border: 1px solid var(--border);

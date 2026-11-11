@@ -48,9 +48,11 @@
       <!-- 服务卡片列表 -->
       <div v-else class="service-grid">
         <ServiceCard v-for="svc in services" :key="svc.id" :service="svc" @edit="handleEdit" @delete="handleDelete"
-          @check="handleCheck" />
+          @check="handleCheck" @diagnose="openDiagnosis" />
       </div>
     </div>
+
+    <ServiceDiagnosisDrawer v-model="diagnosisVisible" :service="diagnosisService" />
 
     <!-- 注册/编辑弹窗 -->
     <ServiceFormDialog v-model="dialogVisible" :service="editingService" @success="handleFormSuccess" />
@@ -112,6 +114,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Search, Plus, Tools } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ServiceCard from '@/components/service/ServiceCard.vue'
+import ServiceDiagnosisDrawer from '@/components/service/ServiceDiagnosisDrawer.vue'
 import ServiceFormDialog from '@/components/service/ServiceFormDialog.vue'
 import { listMaintenanceWindows, createMaintenanceWindow, endMaintenanceWindow } from '@/api/maintenance'
 import {
@@ -124,6 +127,19 @@ import {
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
+
+const diagnosisVisible = ref(false)
+const diagnosisService = ref(null)
+
+/**
+ * 打开独立诊断面板，不修改服务注册、检查和维护窗口状态。
+ * @param {object} service 当前卡片的已登记服务
+ * @returns {void} 无返回值
+ */
+function openDiagnosis(service) {
+  diagnosisService.value = { ...service }
+  diagnosisVisible.value = true
+}
 
 const services = ref([])
 const loading = ref(false)
